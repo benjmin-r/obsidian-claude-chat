@@ -1,0 +1,176 @@
+/**
+ * Connection — the per-client protocol state machine. Decoupled from the `ws`
+ * library: it consumes already-parsed `ClientMessage`s and emits `BridgeEvent`s
+ * through an injected `send`, so it is fully unit-testable. `ws-transport.ts` is
+ * the thin shell that parses frames and pumps them through here.
+ *
+ * Enforces: bearer-token auth on `hello`; single-writer input per session
+ * (mirrored read-only for additional clients); per-connection `isWriter`
+ * rewriting of `session_status`.
+ */
+
+import type { BridgeEvent, ClientMessage } from "@occ/protocol";
+import { PROTOCOL_VERSION } from "@occ/protocol";
+import type { SessionActor } from "./session-actor";
+import type { SessionManager } from "./session-manager";
+
+/** Tracks which connection currently "owns" (may write to) each session. */
+export interface WriterRegistry {
+	claim(actor: SessionActor, conn: object): boolean;
+	release(actor: SessionActor, conn: object): void;
+	isWriter(actor: SessionActor, conn: object): boolean;
+}
+
+export function createWriterRegistry(): WriterRegistry {
+	const owners = new Map<SessionActor, object>();
+	return {
+		claim(actor, conn) {
+			const current = owners.get(actor);
+			if (current && current !== conn) return false;
+			owners.set(actor, conn);
+			return true;
+		},
+		release(actor, conn) {
+			if (owners.get(actor) === conn) owners.delete(actor);
+		},
+		isWriter(actor, conn) {
+			return owners.get(actor) === conn;
+		},
+	};
+}
+
+export interface ConnectionDeps {
+	manager: SessionManager;
+	token: string;
+	writers: WriterRegistry;
+	send: (event: BridgeEvent) => void;
+}
+
+/** Length-independent string compare (avoids trivially leaking token length via early return). */
+function safeEqual(a: string, b: string): boolean {
+	let diff = a.length ^ b.length;
+	const max = Math.max(a.length, b.length);
+	for (let i = 0; i < max; i++) {
+		diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+	}
+	return diff === 0;
+}
+
+export class Connection {
+	private authed = false;
+	private attached: { actor: SessionActor; unsubscribe: () => void } | undefined;
+
+	constructor(private readonly deps: ConnectionDeps) {}
+
+	/** Process one client message. Returns `{ close: true }` when the socket should be dropped. */
+	handle(msg: ClientMessage): { close?: boolean } {
+		if (msg.type === "hello") return this.onHello(msg);
+		if (!this.authed) {
+			this.deps.send({ type: "error", message: "Not authenticated: send hello first." });
+			return { close: true };
+		}
+		switch (msg.type) {
+			case "user_message":
+				this.onUserMessage(msg.sessionId, msg.text);
+				return {};
+			case "permission_decision":
+				this.withActor(msg.sessionId, (a) => a.decidePermission(msg.toolUseId, msg.allow, msg.message));
+				return {};
+			case "interrupt":
+				this.withActor(msg.sessionId, (a) => void a.interrupt());
+				return {};
+			case "new_session":
+				this.onNewSession(msg.model);
+				return {};
+			case "resume_session":
+				this.onResume(msg.sessionId);
+				return {};
+			case "list_sessions":
+				this.deps.send({ type: "sessions_list", sessions: this.deps.manager.list() });
+				return {};
+			default:
+				return {};
+		}
+	}
+
+	/** Tear down on socket close. */
+	close(): void {
+		this.detach();
+	}
+
+	// -- handlers ------------------------------------------------------------
+
+	private onHello(msg: Extract<ClientMessage, { type: "hello" }>): { close?: boolean } {
+		if (!safeEqual(msg.token ?? "", this.deps.token)) {
+			this.deps.send({ type: "error", message: "Invalid token." });
+			return { close: true };
+		}
+		this.authed = true;
+		this.deps.send({ type: "ready", protocolVersion: PROTOCOL_VERSION });
+		if (msg.attach) {
+			const actor = this.deps.manager.get(msg.attach);
+			if (actor) this.attach(actor);
+			else this.deps.send({ type: "error", message: `No such session: ${msg.attach}` });
+		}
+		return {};
+	}
+
+	private onUserMessage(sessionId: string, text: string): void {
+		this.withActor(sessionId, (actor) => {
+			if (this.attached?.actor !== actor) this.attach(actor);
+			if (!this.deps.writers.claim(actor, this)) {
+				this.deps.send({
+					type: "error",
+					sessionId: actor.id,
+					message: "Another client is the active writer for this session.",
+				});
+				return;
+			}
+			actor.enqueue(text);
+		});
+	}
+
+	private onNewSession(model?: string): void {
+		const actor = this.deps.manager.create(model);
+		this.deps.writers.claim(actor, this); // the creator is the writer
+		this.attach(actor); // attach AFTER claiming so the first status reports isWriter:true
+	}
+
+	private onResume(sessionId: string): void {
+		const actor = this.deps.manager.resume(sessionId);
+		this.attach(actor);
+	}
+
+	private withActor(sessionId: string, fn: (actor: SessionActor) => void): void {
+		const actor = this.deps.manager.get(sessionId);
+		if (!actor) {
+			this.deps.send({ type: "error", sessionId, message: `No such session: ${sessionId}` });
+			return;
+		}
+		fn(actor);
+	}
+
+	// -- attach / forward ----------------------------------------------------
+
+	private attach(actor: SessionActor): void {
+		if (this.attached?.actor === actor) return;
+		this.detach();
+		const unsubscribe = actor.subscribe((event) => this.forward(actor, event));
+		this.attached = { actor, unsubscribe };
+	}
+
+	private detach(): void {
+		if (!this.attached) return;
+		this.attached.unsubscribe();
+		this.deps.writers.release(this.attached.actor, this);
+		this.attached = undefined;
+	}
+
+	private forward(actor: SessionActor, event: BridgeEvent): void {
+		if (event.type === "session_status") {
+			this.deps.send({ ...event, isWriter: this.deps.writers.isWriter(actor, this) });
+		} else {
+			this.deps.send(event);
+		}
+	}
+}

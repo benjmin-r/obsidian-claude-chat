@@ -1,0 +1,55 @@
+name: Release plugin
+
+# Publishes a GitHub Release with the Obsidian plugin assets
+# (main.js, manifest.json, styles.css) whenever you push a version tag.
+#
+# Usage:
+#   1. Bump "version" in packages/plugin/manifest.json (e.g. 0.2.0)
+#   2. git tag 0.2.0 && git push origin 0.2.0
+# The tag MUST equal the manifest version (Obsidian/BRAT match release tag to it).
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build protocol + plugin
+        run: |
+          npm run build -w @occ/protocol
+          npm run build -w @occ/plugin
+
+      - name: Verify tag matches manifest version
+        run: |
+          v=$(node -p "require('./packages/plugin/manifest.json').version")
+          if [ "$v" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' does not match manifest version '$v'"
+            exit 1
+          fi
+
+      - name: Publish release with plugin assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            packages/plugin/main.js \
+            packages/plugin/manifest.json \
+            packages/plugin/styles.css

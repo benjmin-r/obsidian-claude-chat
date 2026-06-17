@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+packages/*/dist/
+packages/plugin/main.js
+*.map
+# Stray compiled output should never live next to TS sources
+packages/*/src/**/*.js
+packages/*/src/**/*.d.ts
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# TypeScript / tooling caches
+*.tsbuildinfo
+.eslintcache
+
+# Obsidian plugin data
+data.json
+
+# Env / secrets (keeps *.env.example tracked)
+.env
+*.env
+*.local
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.log
+.claude/settings.local.json

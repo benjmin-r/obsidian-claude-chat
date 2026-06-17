@@ -1,0 +1,27 @@
+{
+	"compilerOptions": {
+		"baseUrl": "src",
+		"module": "ESNext",
+		"target": "ES2018",
+		"inlineSourceMap": true,
+		"inlineSources": true,
+		"noImplicitAny": true,
+		"noImplicitReturns": true,
+		"strictNullChecks": true,
+		"strict": true,
+		"noUncheckedIndexedAccess": true,
+		"useUnknownInCatchVariables": true,
+		"esModuleInterop": true,
+		"allowSyntheticDefaultImports": true,
+		"moduleResolution": "node",
+		"importHelpers": false,
+		"isolatedModules": true,
+		"skipLibCheck": true,
+		"lib": ["DOM", "ES2018"],
+		"paths": {
+			"@occ/protocol": ["../../protocol/src/index.ts"]
+		}
+	},
+	"include": ["src/**/*.ts"],
+	"exclude": ["node_modules", "**/*.test.ts"]
+}

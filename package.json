@@ -1,0 +1,22 @@
+{
+	"name": "obsidian-claude-chat",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Structured Obsidian chat on the Claude Agent SDK: a server-owned long-lived session relayed over Tailscale to an own Obsidian plugin.",
+	"workspaces": [
+		"packages/protocol",
+		"packages/server",
+		"packages/plugin"
+	],
+	"scripts": {
+		"build": "npm run build -w @occ/protocol && npm run build -w @occ/server && npm run build -w @occ/plugin",
+		"test": "npm run test --workspaces --if-present",
+		"test:coverage": "npm run test:coverage --workspaces --if-present",
+		"lint": "npm run lint --workspaces --if-present",
+		"clean": "rm -rf packages/*/dist packages/*/coverage packages/plugin/main.js"
+	},
+	"license": "MIT",
+	"engines": {
+		"node": ">=18"
+	}
+}

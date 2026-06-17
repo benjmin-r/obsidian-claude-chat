@@ -1,0 +1,123 @@
+/* Claude Chat sidebar */
+
+.occ-chat {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	gap: 8px;
+}
+
+.occ-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	padding: 4px 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.occ-badge {
+	font-size: 0.75em;
+	padding: 1px 6px;
+	border-radius: 6px;
+	background-color: var(--background-secondary);
+	color: var(--text-muted);
+}
+
+.occ-badge.occ-connected {
+	color: var(--text-success);
+}
+.occ-badge.occ-disconnected {
+	color: var(--text-error);
+}
+.occ-badge.occ-working {
+	color: var(--text-accent);
+}
+
+.occ-messages {
+	flex: 1;
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 4px;
+}
+
+.occ-bubble {
+	border-radius: 8px;
+	padding: 8px 10px;
+	max-width: 100%;
+	white-space: normal;
+	word-break: break-word;
+}
+
+.occ-bubble.occ-user {
+	background-color: var(--background-modifier-hover);
+	align-self: flex-end;
+}
+
+.occ-bubble.occ-assistant {
+	background-color: var(--background-secondary);
+	align-self: flex-start;
+}
+
+.occ-thinking {
+	font-style: italic;
+	color: var(--text-muted);
+	font-size: 0.9em;
+}
+
+.occ-tool {
+	font-family: var(--font-monospace);
+	font-size: 0.85em;
+	background-color: var(--background-primary-alt);
+	border-left: 3px solid var(--text-accent);
+	padding: 4px 8px;
+	border-radius: 4px;
+}
+
+.occ-tool.occ-tool-error {
+	border-left-color: var(--text-error);
+}
+
+.occ-todos {
+	list-style: none;
+	padding-left: 0;
+	font-size: 0.9em;
+}
+
+.occ-permission {
+	border: 1px solid var(--text-error);
+	border-radius: 8px;
+	padding: 8px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.occ-permission-buttons {
+	display: flex;
+	gap: 8px;
+}
+
+.occ-cursor::after {
+	content: "▍";
+	animation: occ-blink 1s steps(2, start) infinite;
+}
+
+@keyframes occ-blink {
+	to {
+		visibility: hidden;
+	}
+}
+
+.occ-input-row {
+	display: flex;
+	gap: 8px;
+}
+
+.occ-input-row textarea {
+	flex: 1;
+	resize: vertical;
+	min-height: 48px;
+}

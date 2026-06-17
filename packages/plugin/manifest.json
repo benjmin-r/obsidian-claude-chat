@@ -1,0 +1,10 @@
+{
+	"id": "claude-chat",
+	"name": "Claude Chat",
+	"version": "0.1.0",
+	"minAppVersion": "1.4.0",
+	"description": "Structured Claude chat in a sidebar, backed by a self-hosted Claude Agent SDK server over Tailscale.",
+	"author": "Benjamin",
+	"authorUrl": "",
+	"isDesktopOnly": false
+}

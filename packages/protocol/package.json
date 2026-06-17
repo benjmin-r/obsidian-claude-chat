@@ -1,0 +1,16 @@
+{
+	"name": "@occ/protocol",
+	"version": "0.1.0",
+	"description": "Pure shared wire types, SDK→bridge event mapping, and destructive-tool predicate.",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"test": "jest",
+		"test:coverage": "jest --coverage"
+	},
+	"license": "MIT"
+}

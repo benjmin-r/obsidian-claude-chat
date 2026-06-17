@@ -1,0 +1,48 @@
+[Unit]
+Description=Claude Anywhere SDK service (structured Obsidian chat over the Agent SDK)
+# Tailscale must be up first: we bind to the tailnet IP only.
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=USER
+WorkingDirectory=/home/USER/vaults/VAULT
+
+# HOME must point at the account whose ~/.claude holds the subscription session,
+# so the SDK authenticates against the Claude subscription.
+Environment=HOME=/home/USER
+# Ensure node, claude and tailscale are resolvable.
+Environment=PATH=/home/USER/.local/share/npm/bin:/usr/local/bin:/usr/bin:/bin
+
+# Token + bind address + (optional) port/model live here, NOT in this unit file.
+# Example contents (chmod 600):
+#   OCC_TOKEN=<a long random secret>
+#   OCC_HOST=100.64.0.1
+#   OCC_PORT=8765
+#   OCC_VAULT_CWD=/home/USER/vaults/VAULT
+#   OCC_MODEL=claude-opus-4-8
+EnvironmentFile=/home/USER/.config/claude-anywhere-sdk.env
+
+# SECURITY: ANTHROPIC_API_KEY is intentionally NOT set. If it were set the SDK
+# would switch from the subscription to metered API billing. Do not add it.
+
+ExecStart=/usr/bin/env node /home/USER/projects/obsidian-claude-chat/packages/server/dist/index.js
+
+Restart=always
+RestartSec=2
+# NOTE: the query() runs in THIS process, so a restart loses any in-flight turn;
+# clients reattach and the transcript is restored via resume (Level-1). This is
+# expected (see PLAN "Resume model").
+KillMode=process
+
+# Light hardening (the service only needs the vault + ~/.claude).
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

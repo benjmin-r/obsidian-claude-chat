@@ -1,0 +1,138 @@
+import { extractTodos, mapSdkEvent, stringifyToolResult } from "../src/map-sdk-events";
+import type { SdkMessage } from "../src/sdk-types";
+
+const SID = "sess-1";
+
+describe("mapSdkEvent", () => {
+	it("maps text deltas to assistant_text_delta", () => {
+		const msg: SdkMessage = {
+			type: "stream_event",
+			event: { type: "content_block_delta", delta: { type: "text_delta", text: "Hello" } },
+		};
+		expect(mapSdkEvent(msg, SID)).toEqual([{ type: "assistant_text_delta", sessionId: SID, text: "Hello" }]);
+	});
+
+	it("maps thinking deltas to thinking_delta", () => {
+		const msg: SdkMessage = {
+			type: "stream_event",
+			event: { type: "content_block_delta", delta: { type: "thinking_delta", thinking: "hmm" } },
+		};
+		expect(mapSdkEvent(msg, SID)).toEqual([{ type: "thinking_delta", sessionId: SID, text: "hmm" }]);
+	});
+
+	it("ignores empty deltas and non-delta stream events", () => {
+		expect(
+			mapSdkEvent({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "" } } }, SID)
+		).toEqual([]);
+		expect(mapSdkEvent({ type: "stream_event", event: { type: "content_block_start" } }, SID)).toEqual([]);
+		expect(mapSdkEvent({ type: "stream_event" } as SdkMessage, SID)).toEqual([]);
+	});
+
+	it("emits tool_use blocks from assistant messages but not text (already streamed)", () => {
+		const msg: SdkMessage = {
+			type: "assistant",
+			message: {
+				content: [
+					{ type: "text", text: "ignored, already streamed" },
+					{ type: "tool_use", id: "tu1", name: "Read", input: { file_path: "/x" } },
+				],
+			},
+		};
+		expect(mapSdkEvent(msg, SID)).toEqual([
+			{ type: "tool_use", sessionId: SID, toolUseId: "tu1", name: "Read", input: { file_path: "/x" } },
+		]);
+	});
+
+	it("maps TodoWrite tool_use to todo_update", () => {
+		const msg: SdkMessage = {
+			type: "assistant",
+			message: {
+				content: [
+					{
+						type: "tool_use",
+						id: "tu2",
+						name: "TodoWrite",
+						input: {
+							todos: [
+								{ content: "a", status: "completed", activeForm: "doing a" },
+								{ content: "b", status: "in_progress" },
+								{ content: "c", status: "pending" },
+							],
+						},
+					},
+				],
+			},
+		};
+		expect(mapSdkEvent(msg, SID)).toEqual([
+			{
+				type: "todo_update",
+				sessionId: SID,
+				todos: [
+					{ content: "a", status: "completed", activeForm: "doing a" },
+					{ content: "b", status: "in_progress" },
+					{ content: "c", status: "pending" },
+				],
+			},
+		]);
+	});
+
+	it("maps tool_result blocks from user messages", () => {
+		const msg: SdkMessage = {
+			type: "user",
+			message: {
+				content: [{ type: "tool_result", tool_use_id: "tu1", content: "file contents", is_error: false }],
+			},
+		};
+		expect(mapSdkEvent(msg, SID)).toEqual([
+			{ type: "tool_result", sessionId: SID, toolUseId: "tu1", content: "file contents", isError: false },
+		]);
+	});
+
+	it("maps result to done and reads is_error", () => {
+		expect(mapSdkEvent({ type: "result", subtype: "success", is_error: false }, SID)).toEqual([
+			{ type: "done", sessionId: SID, subtype: "success", isError: false },
+		]);
+		expect(mapSdkEvent({ type: "result", subtype: "error_max_turns", is_error: true }, SID)).toEqual([
+			{ type: "done", sessionId: SID, subtype: "error_max_turns", isError: true },
+		]);
+	});
+
+	it("prefers the session id carried on the message", () => {
+		const msg: SdkMessage = { type: "result", subtype: "success", session_id: "real-id" };
+		expect(mapSdkEvent(msg, SID)[0]).toMatchObject({ sessionId: "real-id" });
+	});
+
+	it("returns [] for system/init and unknown types", () => {
+		expect(mapSdkEvent({ type: "system", subtype: "init", session_id: "x" }, SID)).toEqual([]);
+		expect(mapSdkEvent({ type: "something_new" } as SdkMessage, SID)).toEqual([]);
+	});
+});
+
+describe("stringifyToolResult", () => {
+	it("passes strings through", () => {
+		expect(stringifyToolResult("hi")).toBe("hi");
+	});
+	it("joins text blocks", () => {
+		expect(stringifyToolResult([{ type: "text", text: "a" }, { type: "text", text: "b" }])).toBe("ab");
+		expect(stringifyToolResult(["x", { type: "text", text: "y" }, { type: "image" }])).toBe("xy");
+	});
+	it("handles null and objects", () => {
+		expect(stringifyToolResult(null)).toBe("");
+		expect(stringifyToolResult(undefined)).toBe("");
+		expect(stringifyToolResult({ a: 1 })).toBe('{"a":1}');
+	});
+});
+
+describe("extractTodos", () => {
+	it("returns [] for malformed input", () => {
+		expect(extractTodos(undefined)).toEqual([]);
+		expect(extractTodos({})).toEqual([]);
+		expect(extractTodos({ todos: "nope" })).toEqual([]);
+	});
+	it("normalises status and skips junk entries", () => {
+		expect(extractTodos({ todos: [{ content: "x", status: "weird" }, null, { content: "y", status: "completed" }] })).toEqual([
+			{ content: "x", status: "pending" },
+			{ content: "y", status: "completed" },
+		]);
+	});
+});
