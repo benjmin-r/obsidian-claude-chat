@@ -1,4 +1,4 @@
-import { ItemView, MarkdownRenderer, Notice, setIcon, type WorkspaceLeaf } from "obsidian";
+import { App, ItemView, MarkdownRenderer, Modal, Notice, setIcon, type WorkspaceLeaf } from "obsidian";
 import type { BridgeEvent } from "@occ/protocol";
 import type ClaudeChatPlugin from "./main";
 import { BridgeClient, type WsLike } from "./bridge-client";
@@ -43,6 +43,7 @@ export class ChatView extends ItemView {
 	private sessionsRefreshTimer: number | undefined;
 	private inputEl!: HTMLTextAreaElement;
 	private modelSelect!: HTMLSelectElement;
+	private interruptBtn!: HTMLButtonElement;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -110,10 +111,10 @@ export class ChatView extends ItemView {
 		listBtn.setAttr("aria-label", "Resume a session");
 		listBtn.addEventListener("click", () => this.togglePicker());
 
-		const interruptBtn = toolbar.createEl("button");
-		setIcon(interruptBtn, "square");
-		interruptBtn.setAttr("aria-label", "Interrupt");
-		interruptBtn.addEventListener("click", () => {
+		this.interruptBtn = toolbar.createEl("button");
+		setIcon(this.interruptBtn, "square");
+		this.interruptBtn.setAttr("aria-label", "Stop the current turn");
+		this.interruptBtn.addEventListener("click", () => {
 			if (this.state.sessionId) this.client.interrupt(this.state.sessionId);
 		});
 
@@ -243,12 +244,30 @@ export class ChatView extends ItemView {
 		}
 		for (const s of this.state.sessions) {
 			const item = this.pickerEl.createDiv({ cls: "occ-picker-item" });
-			item.createSpan({ cls: "occ-picker-title", text: (s.title && s.title.trim()) || s.sessionId });
+			const main = item.createDiv({ cls: "occ-picker-main" });
+			main.createSpan({ cls: "occ-picker-title", text: (s.title && s.title.trim()) || s.sessionId });
 			const when = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "";
 			const meta = [s.status, when].filter(Boolean).join(" · ");
-			if (meta) item.createDiv({ cls: "occ-picker-meta", text: meta });
-			item.addEventListener("click", () => this.resumeSession(s.sessionId));
+			if (meta) main.createDiv({ cls: "occ-picker-meta", text: meta });
+			main.addEventListener("click", () => this.resumeSession(s.sessionId));
+
+			const rename = item.createEl("button", { cls: "occ-picker-rename" });
+			setIcon(rename, "pencil");
+			rename.setAttr("aria-label", "Rename session");
+			rename.addEventListener("click", (e) => {
+				e.stopPropagation();
+				this.openRename(s.sessionId, (s.title && s.title.trim()) || "");
+			});
 		}
+	}
+
+	private openRename(sessionId: string, current: string): void {
+		new RenameModal(this.app, current, (title) => {
+			this.client.renameSession(sessionId, title);
+			// The server pushes a refreshed sessions_list; nudge a refresh too.
+			this.refreshSessions();
+			this.renderPicker();
+		}).open();
 	}
 
 	private pickerStatusIsWarning(): boolean {
@@ -273,6 +292,8 @@ export class ChatView extends ItemView {
 		const writer = this.state.sessionId ? (this.state.isWriter ? "" : " (mirroring)") : "";
 		this.statusEl.className = `occ-badge occ-${this.state.status}`;
 		this.statusEl.setText(this.state.status + writer);
+		// The stop button only does something mid-turn; disable it otherwise.
+		this.interruptBtn.disabled = this.state.status !== "working";
 	}
 
 	private renderTodos(): void {
@@ -322,5 +343,48 @@ export class ChatView extends ItemView {
 		allow.addEventListener("click", () => this.decide(req.toolUseId, true));
 		const deny = buttons.createEl("button", { text: "Deny", cls: "mod-cta" });
 		deny.addEventListener("click", () => this.decide(req.toolUseId, false));
+	}
+}
+
+/** Small modal to set a session's title. */
+class RenameModal extends Modal {
+	constructor(
+		app: App,
+		private readonly current: string,
+		private readonly onSubmit: (title: string) => void
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.createEl("h3", { text: "Rename session" });
+		const input = contentEl.createEl("input");
+		input.type = "text";
+		input.value = this.current;
+		input.placeholder = "Session title";
+		input.style.width = "100%";
+
+		const submit = (): void => {
+			const value = input.value.trim();
+			if (value) this.onSubmit(value);
+			this.close();
+		};
+		input.addEventListener("keydown", (e) => {
+			if (e.key === "Enter") {
+				e.preventDefault();
+				submit();
+			}
+		});
+
+		const row = contentEl.createDiv({ cls: "occ-modal-buttons" });
+		row.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+		row.createEl("button", { text: "Save", cls: "mod-cta" }).addEventListener("click", submit);
+		input.focus();
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
 	}
 }

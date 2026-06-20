@@ -204,6 +204,13 @@ export interface ResumeSessionMessage {
 	sessionId: string;
 }
 
+/** Set a session's display title. */
+export interface RenameSessionMessage {
+	type: "rename_session";
+	sessionId: string;
+	title: string;
+}
+
 /** Request the current session list. */
 export interface ListSessionsMessage {
 	type: "list_sessions";
@@ -217,4 +224,5 @@ export type ClientMessage =
 	| InterruptMessage
 	| NewSessionMessage
 	| ResumeSessionMessage
+	| RenameSessionMessage
 	| ListSessionsMessage;

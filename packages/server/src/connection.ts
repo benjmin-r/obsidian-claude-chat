@@ -85,6 +85,9 @@ export class Connection {
 			case "resume_session":
 				this.onResume(msg.sessionId);
 				return {};
+			case "rename_session":
+				this.onRename(msg.sessionId, msg.title);
+				return {};
 			case "list_sessions":
 				this.deps.manager
 					.listSummaries()
@@ -146,6 +149,17 @@ export class Connection {
 			.catch((err: unknown) => {
 				const message = err instanceof Error ? err.message : String(err);
 				this.deps.send({ type: "error", sessionId, message: `Failed to resume: ${message}` });
+			});
+	}
+
+	private onRename(sessionId: string, title: string): void {
+		this.deps.manager
+			.renameSession(sessionId, title)
+			.then(() => this.deps.manager.listSummaries())
+			.then((sessions) => this.deps.send({ type: "sessions_list", sessions }))
+			.catch((err: unknown) => {
+				const message = err instanceof Error ? err.message : String(err);
+				this.deps.send({ type: "error", sessionId, message: `Rename failed: ${message}` });
 			});
 	}
 

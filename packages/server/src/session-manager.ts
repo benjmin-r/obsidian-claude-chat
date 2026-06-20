@@ -8,7 +8,7 @@
 
 import { mapHistoryMessages, type SessionSummary } from "@occ/protocol";
 import { SessionActor, type SessionActorDeps } from "./session-actor";
-import type { ListStored, LoadHistory } from "./ports";
+import type { ListStored, LoadHistory, RenameStored } from "./ports";
 
 export interface SessionManagerConfig {
 	cwd: string;
@@ -23,6 +23,8 @@ export interface SessionManagerDeps extends SessionActorDeps {
 	listStored: ListStored;
 	/** load a persisted session's prior transcript. */
 	loadHistory: LoadHistory;
+	/** set a persisted session's title. */
+	renameStored: RenameStored;
 }
 
 export class SessionManager {
@@ -81,6 +83,11 @@ export class SessionManager {
 			// history is best-effort; resume still works for the next turn.
 		}
 		return actor;
+	}
+
+	/** Set a session's display title in the store. */
+	async renameSession(sessionId: string, title: string): Promise<void> {
+		await this.deps.renameStored(this.config.cwd, sessionId, title);
 	}
 
 	get(id: string): SessionActor | undefined {

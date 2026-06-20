@@ -1,9 +1,9 @@
 import type { BridgeEvent } from "@occ/protocol";
 import { SessionManager } from "../src/session-manager";
-import type { ListStored, LoadHistory } from "../src/ports";
+import type { ListStored, LoadHistory, RenameStored } from "../src/ports";
 import { flush, makeFakeQuery } from "./fake-query";
 
-function makeManager(opts: { listStored?: ListStored; loadHistory?: LoadHistory } = {}) {
+function makeManager(opts: { listStored?: ListStored; loadHistory?: LoadHistory; renameStored?: RenameStored } = {}) {
 	const fake = makeFakeQuery();
 	let n = 0;
 	const manager = new SessionManager(
@@ -13,6 +13,7 @@ function makeManager(opts: { listStored?: ListStored; loadHistory?: LoadHistory 
 			newHandleId: () => `h${(n += 1)}`,
 			listStored: opts.listStored ?? (async () => []),
 			loadHistory: opts.loadHistory ?? (async () => []),
+			renameStored: opts.renameStored ?? (async () => undefined),
 		},
 		{ cwd: "/v", defaultModel: "claude-opus-4-8" }
 	);
@@ -87,5 +88,16 @@ describe("SessionManager", () => {
 		expect(events.some((e) => e.type === "user_echo" && e.text === "q1")).toBe(true);
 		expect(events.some((e) => e.type === "assistant_text_delta" && e.text === "a1")).toBe(true);
 		await expect(manager.resumeWithHistory("sess-x")).resolves.toBe(actor);
+	});
+
+	it("renameSession delegates to the store with the configured cwd", async () => {
+		const calls: Array<[string, string, string]> = [];
+		const { manager } = makeManager({
+			renameStored: async (cwd, id, title) => {
+				calls.push([cwd, id, title]);
+			},
+		});
+		await manager.renameSession("sess-1", "New Title");
+		expect(calls).toEqual([["/v", "sess-1", "New Title"]]);
 	});
 });

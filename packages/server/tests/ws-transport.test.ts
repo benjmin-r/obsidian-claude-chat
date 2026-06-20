@@ -4,6 +4,11 @@ describe("parseClientMessage", () => {
 	it("parses valid client frames", () => {
 		expect(parseClientMessage('{"type":"hello","token":"x"}')).toEqual({ type: "hello", token: "x" });
 		expect(parseClientMessage('{"type":"list_sessions"}')).toEqual({ type: "list_sessions" });
+		expect(parseClientMessage('{"type":"rename_session","sessionId":"s","title":"t"}')).toEqual({
+			type: "rename_session",
+			sessionId: "s",
+			title: "t",
+		});
 	});
 
 	it("rejects non-JSON", () => {

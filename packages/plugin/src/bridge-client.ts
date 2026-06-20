@@ -87,6 +87,10 @@ export class BridgeClient {
 		this.send({ type: "resume_session", sessionId });
 	}
 
+	renameSession(sessionId: string, title: string): void {
+		this.send({ type: "rename_session", sessionId, title });
+	}
+
 	userMessage(sessionId: string, text: string): void {
 		this.send({ type: "user_message", sessionId, text });
 	}

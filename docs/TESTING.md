@@ -43,7 +43,10 @@ no token). To watch a session live:
   doesn't yet remember the last session id). Use *list*/resume to get back.
 - **Full re-render per event** — long transcripts may flicker or jump scroll;
   no incremental/virtualized DOM yet.
-- **Minimal session UI** — no rename/delete/search; basic list only.
+- **Session UI** — rename works; no delete/search yet.
+- **Resume loads the full transcript.** Planned enhancement: load only the last
+  N messages on resume, fetching older ones on demand via a "load older messages"
+  affordance when the user scrolls up.
 - **Text only** — no file/image attachments; no slash-command UI.
 - **Permission prompt is per-request** — no "always allow this tool" memory.
 - **Error surfacing is basic** — a Notice + an error line; not always actionable.

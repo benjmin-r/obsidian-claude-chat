@@ -64,3 +64,6 @@ export type ListStored = (cwd: string) => Promise<StoredSessionInfo[]>;
 
 /** Load a persisted session's messages (real = SDK `getSessionMessages`). */
 export type LoadHistory = (cwd: string, sessionId: string) => Promise<HistoryMessage[]>;
+
+/** Set a persisted session's title (real = SDK `renameSession`). */
+export type RenameStored = (cwd: string, sessionId: string, title: string) => Promise<void>;

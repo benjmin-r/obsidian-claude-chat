@@ -13,6 +13,7 @@ function setup() {
 			newHandleId: () => `h${(n += 1)}`,
 			listStored: async () => [],
 			loadHistory: async () => [],
+			renameStored: async () => undefined,
 		},
 		{ cwd: "/v", defaultModel: "m" }
 	);
@@ -107,6 +108,7 @@ describe("Connection session flow", () => {
 					{ type: "user", message: { content: "earlier question" } },
 					{ type: "assistant", message: { content: [{ type: "text", text: "earlier answer" }] } },
 				],
+				renameStored: async () => undefined,
 			},
 			{ cwd: "/v", defaultModel: "m" }
 		);
@@ -119,6 +121,36 @@ describe("Connection session flow", () => {
 		await flush();
 		expect(sent.some((e) => e.type === "user_echo" && e.text === "earlier question")).toBe(true);
 		expect(sent.some((e) => e.type === "assistant_text_delta" && e.text === "earlier answer")).toBe(true);
+	});
+
+	it("renames a session and replies with a refreshed list", async () => {
+		const fake = makeFakeQuery();
+		let n = 0;
+		const renamed: Array<[string, string]> = [];
+		const manager = new SessionManager(
+			{
+				runQuery: fake.runQuery,
+				now: () => 1,
+				newHandleId: () => `h${(n += 1)}`,
+				listStored: async () => [{ sessionId: "s1", title: "renamed!", updatedAt: 9 }],
+				loadHistory: async () => [],
+				renameStored: async (_cwd, id, title) => {
+					renamed.push([id, title]);
+				},
+			},
+			{ cwd: "/v", defaultModel: "m" }
+		);
+		const writers = createWriterRegistry();
+		const sent: BridgeEvent[] = [];
+		const conn = new Connection({ manager, token: "secret", writers, send: (e) => sent.push(e) });
+		conn.handle({ type: "hello", token: "secret" });
+		conn.handle({ type: "rename_session", sessionId: "s1", title: "renamed!" });
+		await flush();
+		await flush();
+		expect(renamed).toEqual([["s1", "renamed!"]]);
+		expect(
+			sent.some((e) => e.type === "sessions_list" && e.sessions.some((s) => s.title === "renamed!"))
+		).toBe(true);
 	});
 
 	it("enforces single-writer across mirrored clients and hands off on close", () => {

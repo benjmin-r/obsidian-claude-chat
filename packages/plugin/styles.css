@@ -122,37 +122,56 @@
 	min-height: 48px;
 }
 
-/* Mobile-first: wrap long lines / code instead of horizontal scrollbars. */
-.occ-chat pre,
-.occ-chat code {
-	white-space: pre-wrap;
-	overflow-wrap: anywhere;
-	word-break: break-word;
+/* The sidebar itself must never scroll sideways. */
+.occ-chat,
+.occ-messages {
+	overflow-x: hidden;
+}
+
+/* min-width:0 lets these flex/box children shrink so an inner code block's
+   horizontal scroll stays contained instead of widening the layout. */
+.occ-bubble,
+.occ-tool {
+	min-width: 0;
 	max-width: 100%;
 }
 
-.occ-bubble pre {
+/* Prose and inline code wrap. */
+.occ-bubble,
+.occ-tool {
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+.occ-chat :not(pre) > code {
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+
+/* Code BLOCKS keep their formatting and scroll horizontally WITHIN the block. */
+.occ-chat pre {
+	white-space: pre;
+	overflow-x: auto;
+	max-width: 100%;
 	margin: 6px 0;
 	padding: 8px 10px;
 	border-radius: 6px;
 	background-color: var(--background-primary-alt);
 	font-size: 0.85em;
-	overflow-x: hidden;
 }
 
-.occ-bubble pre code {
+.occ-chat pre code {
+	white-space: inherit;
 	background: none;
 	padding: 0;
-	white-space: pre-wrap;
 }
 
-/* Tool blocks already have a frame; keep their <pre> flush and wrapping. */
 .occ-tool pre {
+	white-space: pre;
+	overflow-x: auto;
+	max-width: 100%;
 	margin: 4px 0 0;
 	padding: 0;
 	background: none;
-	white-space: pre-wrap;
-	overflow-wrap: anywhere;
 }
 
 /* Session picker */
@@ -183,9 +202,31 @@
 }
 
 .occ-picker-item {
+	display: flex;
+	align-items: center;
+	gap: 6px;
 	padding: 8px 10px;
 	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.occ-picker-main {
+	flex: 1;
+	min-width: 0;
 	cursor: pointer;
+}
+
+.occ-picker-rename {
+	flex: 0 0 auto;
+	padding: 4px 6px;
+	background: none;
+	box-shadow: none;
+}
+
+.occ-modal-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 12px;
 }
 
 .occ-picker-item:last-child {
