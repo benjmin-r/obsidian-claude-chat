@@ -100,24 +100,35 @@ export class SessionManager {
 
 	/** Active in-memory sessions merged with persisted ones from the store, newest first. */
 	async listSummaries(): Promise<SessionSummary[]> {
-		const active = this.list();
-		const activeIds = new Set(active.map((s) => s.sessionId));
-		let stored: SessionSummary[] = [];
+		let stored: { sessionId: string; title: string; updatedAt: number }[] = [];
 		try {
-			stored = (await this.deps.listStored(this.config.cwd))
-				.filter((s) => !activeIds.has(s.sessionId))
-				.map((s) => ({
-					sessionId: s.sessionId,
-					title: s.title,
-					model: this.config.defaultModel,
-					status: "idle" as const,
-					cwd: this.config.cwd,
-					updatedAt: s.updatedAt,
-				}));
+			stored = await this.deps.listStored(this.config.cwd);
 		} catch {
 			stored = [];
 		}
-		return [...active, ...stored].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+		const storedById = new Map(stored.map((s) => [s.sessionId, s]));
+
+		// Active sessions keep their live status but borrow the stored title — an
+		// actor has no title of its own, so without this a resumed (active)
+		// session would display its UUID and a rename would never show.
+		const active = this.list().map((a) => {
+			const info = storedById.get(a.sessionId);
+			return info ? { ...a, title: info.title } : a;
+		});
+		const activeIds = new Set(active.map((s) => s.sessionId));
+
+		const storedOnly: SessionSummary[] = stored
+			.filter((s) => !activeIds.has(s.sessionId))
+			.map((s) => ({
+				sessionId: s.sessionId,
+				title: s.title,
+				model: this.config.defaultModel,
+				status: "idle" as const,
+				cwd: this.config.cwd,
+				updatedAt: s.updatedAt,
+			}));
+
+		return [...active, ...storedOnly].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
 	}
 
 	private register(actor: SessionActor, id: string): void {

@@ -65,6 +65,16 @@ describe("SessionManager", () => {
 		expect(list.map((s) => s.sessionId)).toEqual(["stored-new", active.id, "stored-old"]);
 	});
 
+	it("listSummaries gives an active (resumed) session its stored title, not a UUID", async () => {
+		const { manager } = makeManager({
+			listStored: async () => [{ sessionId: "resumed-1", title: "Renamed!", updatedAt: 50 }],
+		});
+		await manager.resumeWithHistory("resumed-1"); // now active; actor has no title of its own
+		const list = await manager.listSummaries();
+		expect(list).toHaveLength(1); // not duplicated active + stored
+		expect(list[0]).toMatchObject({ sessionId: "resumed-1", title: "Renamed!" });
+	});
+
 	it("listSummaries tolerates a failing store", async () => {
 		const { manager } = makeManager({
 			listStored: async () => {
