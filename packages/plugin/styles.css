@@ -178,6 +178,42 @@
 	border-left-color: var(--text-error);
 }
 
+.occ-tool-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	cursor: pointer;
+}
+.occ-tool-chevron {
+	flex: 0 0 auto;
+	display: inline-flex;
+	opacity: 0.7;
+}
+.occ-tool-name {
+	flex: 0 0 auto;
+	font-weight: var(--font-semibold, 600);
+}
+.occ-tool-preview {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text-muted);
+	font-size: 0.9em;
+}
+.occ-tool-badge {
+	flex: 0 0 auto;
+	color: var(--text-error);
+	font-size: 0.85em;
+}
+.occ-tool-body {
+	margin-top: 6px;
+}
+.occ-tool-body .occ-tool-input {
+	color: var(--text-muted);
+}
+
 .occ-todos {
 	list-style: none;
 	padding-left: 0;

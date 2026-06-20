@@ -3,7 +3,7 @@ import type { BridgeEvent } from "@occ/protocol";
 import type ClaudeChatPlugin from "./main";
 import { BridgeClient, type WsLike } from "./bridge-client";
 import { MODEL_OPTIONS } from "./settings-types";
-import { applyEvent, appendUserMessage, clearPermission, initialState, setConnection, type ChatState } from "./view-model";
+import { applyEvent, appendUserMessage, clearPermission, initialState, setConnection, type ChatState, type ToolEntry } from "./view-model";
 
 export const VIEW_TYPE_CLAUDE_CHAT = "claude-chat-view";
 
@@ -45,6 +45,8 @@ export class ChatView extends ItemView {
 	private sessionsRefreshTimer: number | undefined;
 	private inputEl!: HTMLTextAreaElement;
 	private interruptBtn!: HTMLButtonElement;
+	/** tool blocks the user has expanded, kept across re-renders. */
+	private readonly expandedTools = new Set<string>();
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -434,15 +436,36 @@ export class ChatView extends ItemView {
 	}
 
 
-	private renderTool(entry: { name: string; input: unknown; result?: { content: string; isError: boolean } }): void {
+	private renderTool(entry: ToolEntry): void {
+		const expanded = this.expandedTools.has(entry.toolUseId);
 		const cls = entry.result?.isError ? "occ-tool occ-tool-error" : "occ-tool";
 		const el = this.messagesEl.createDiv({ cls });
-		const summary = typeof entry.input === "object" && entry.input ? JSON.stringify(entry.input) : "";
-		el.createDiv({ text: `🔧 ${entry.name} ${summary}`.trim() });
+
+		// One-line, tappable summary.
+		const header = el.createDiv({ cls: "occ-tool-header" });
+		const chevron = header.createSpan({ cls: "occ-tool-chevron" });
+		setIcon(chevron, expanded ? "chevron-down" : "chevron-right");
+		header.createSpan({ cls: "occ-tool-name", text: `🔧 ${entry.name}` });
+		const inputStr = typeof entry.input === "object" && entry.input ? JSON.stringify(entry.input) : "";
+		if (inputStr) header.createSpan({ cls: "occ-tool-preview", text: inputStr });
+		if (entry.result?.isError) header.createSpan({ cls: "occ-tool-badge", text: "error" });
+
+		// Full detail, hidden until expanded.
+		const body = el.createDiv({ cls: "occ-tool-body" });
+		body.style.display = expanded ? "" : "none";
+		if (inputStr) body.createEl("pre", { cls: "occ-tool-input", text: inputStr });
 		if (entry.result) {
-			const text = entry.result.content.length > 600 ? entry.result.content.slice(0, 600) + "…" : entry.result.content;
-			el.createEl("pre", { text });
+			const c = entry.result.content;
+			body.createEl("pre", { text: c.length > 8000 ? c.slice(0, 8000) + "\n…(truncated)" : c });
 		}
+
+		header.addEventListener("click", () => {
+			const open = !this.expandedTools.has(entry.toolUseId);
+			if (open) this.expandedTools.add(entry.toolUseId);
+			else this.expandedTools.delete(entry.toolUseId);
+			body.style.display = open ? "" : "none";
+			setIcon(chevron, open ? "chevron-down" : "chevron-right");
+		});
 	}
 
 	private renderPermission(): void {
