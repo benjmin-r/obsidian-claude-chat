@@ -146,7 +146,10 @@ npm run lint        # where configured
   `bridge-client`, both unit-tested against fakes; `chat-view.ts` is the thin DOM
   layer.
 
-See `docs/PLAN.md` for the full design rationale and the verified SDK facts.
+**New here (human or AI)?** Read [`AGENTS.md`](AGENTS.md) first — it has the
+architecture invariants and the "anatomy of a feature" checklist (why a serious
+change fans out across protocol → server → plugin layers). See `docs/PLAN.md` for
+the full design rationale and the verified SDK facts.
 
 ## Releasing the plugin (GitHub Actions)
 
