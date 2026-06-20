@@ -7,31 +7,106 @@
 	gap: 8px;
 }
 
+/* Single-row toolbar that never wraps to a second line on mobile. */
 .occ-toolbar {
 	display: flex;
 	align-items: center;
-	gap: 8px;
-	flex-wrap: wrap;
+	gap: 4px;
+	flex-wrap: nowrap;
+	overflow: hidden;
 	padding: 4px 0;
 	border-bottom: 1px solid var(--background-modifier-border);
 }
 
-.occ-badge {
-	font-size: 0.75em;
-	padding: 1px 6px;
-	border-radius: 6px;
-	background-color: var(--background-secondary);
-	color: var(--text-muted);
+.occ-tool-btn {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	padding: 4px 6px;
 }
 
-.occ-badge.occ-connected {
-	color: var(--text-success);
+/* Model picker: compact button that opens a menu; label truncates if needed. */
+.occ-model-btn {
+	flex: 0 1 auto;
+	min-width: 0;
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 4px 8px;
 }
-.occ-badge.occ-disconnected {
+
+.occ-model-label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.occ-model-caret {
+	flex: 0 0 auto;
+	display: inline-flex;
+	opacity: 0.7;
+}
+
+/* Status icons, pinned to the right so their position never shifts. */
+.occ-status {
+	flex: 0 0 auto;
+	margin-left: auto;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+
+.occ-status-icon {
+	display: inline-flex;
+	align-items: center;
+	padding: 4px;
+	cursor: pointer;
+}
+
+.occ-stop {
 	color: var(--text-error);
 }
-.occ-badge.occ-working {
+
+.occ-conn-connected {
+	color: var(--text-success);
+}
+.occ-conn-connecting {
+	color: var(--text-muted);
+}
+.occ-conn-disconnected {
+	color: var(--text-error);
+}
+.occ-act-idle,
+.occ-act-mirroring {
+	color: var(--text-muted);
+}
+.occ-act-working {
 	color: var(--text-accent);
+}
+.occ-act-awaiting {
+	color: var(--text-warning, var(--text-error));
+}
+
+@keyframes occ-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+.occ-conn-connecting svg,
+.occ-act-working svg {
+	animation: occ-spin 1.2s linear infinite;
+}
+
+.occ-legend-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin: 8px 0;
+}
+.occ-legend-row .occ-status-icon {
+	padding: 0;
+	cursor: default;
 }
 
 .occ-messages {

@@ -1,4 +1,4 @@
-import { App, ItemView, MarkdownRenderer, Modal, Notice, setIcon, type WorkspaceLeaf } from "obsidian";
+import { App, ItemView, MarkdownRenderer, Menu, Modal, Notice, setIcon, type WorkspaceLeaf } from "obsidian";
 import type { BridgeEvent } from "@occ/protocol";
 import type ClaudeChatPlugin from "./main";
 import { BridgeClient, type WsLike } from "./bridge-client";
@@ -31,8 +31,10 @@ export class ChatView extends ItemView {
 	private client!: BridgeClient;
 	private pendingText: string | undefined;
 
-	private badgeEl!: HTMLElement;
-	private statusEl!: HTMLElement;
+	private connIconEl!: HTMLElement;
+	private activityIconEl!: HTMLElement;
+	private modelLabelEl!: HTMLElement;
+	private selectedModel: string;
 	private messagesEl!: HTMLElement;
 	private permissionEl!: HTMLElement;
 	private todosEl!: HTMLElement;
@@ -42,7 +44,6 @@ export class ChatView extends ItemView {
 	private sessionsLastOk = 0;
 	private sessionsRefreshTimer: number | undefined;
 	private inputEl!: HTMLTextAreaElement;
-	private modelSelect!: HTMLSelectElement;
 	private interruptBtn!: HTMLButtonElement;
 
 	constructor(
@@ -50,6 +51,7 @@ export class ChatView extends ItemView {
 		private readonly plugin: ClaudeChatPlugin
 	) {
 		super(leaf);
+		this.selectedModel = plugin.settings.defaultModel;
 		this.state = initialState(plugin.settings.defaultModel);
 	}
 
@@ -94,29 +96,36 @@ export class ChatView extends ItemView {
 		root.addClass("occ-chat");
 
 		const toolbar = root.createDiv({ cls: "occ-toolbar" });
-		this.badgeEl = toolbar.createSpan({ cls: "occ-badge" });
-		this.statusEl = toolbar.createSpan({ cls: "occ-badge" });
 
-		this.modelSelect = toolbar.createEl("select");
-		for (const [value, label] of Object.entries(MODEL_OPTIONS)) {
-			this.modelSelect.createEl("option", { text: label, value });
-		}
-		this.modelSelect.value = this.plugin.settings.defaultModel;
-
-		const newBtn = toolbar.createEl("button", { text: "New" });
+		// Left → right: New, session picker, model. (Single row; never wraps.)
+		const newBtn = toolbar.createEl("button", { cls: "occ-tool-btn" });
+		setIcon(newBtn, "plus");
+		newBtn.setAttr("aria-label", "New session");
 		newBtn.addEventListener("click", () => this.startNewSession());
 
-		const listBtn = toolbar.createEl("button");
-		setIcon(listBtn, "list");
-		listBtn.setAttr("aria-label", "Resume a session");
-		listBtn.addEventListener("click", () => this.togglePicker());
+		const pickerBtn = toolbar.createEl("button", { cls: "occ-tool-btn" });
+		setIcon(pickerBtn, "list");
+		pickerBtn.setAttr("aria-label", "Resume a session");
+		pickerBtn.addEventListener("click", () => this.togglePicker());
 
-		this.interruptBtn = toolbar.createEl("button");
+		const modelBtn = toolbar.createEl("button", { cls: "occ-model-btn" });
+		this.modelLabelEl = modelBtn.createSpan({ cls: "occ-model-label" });
+		setIcon(modelBtn.createSpan({ cls: "occ-model-caret" }), "chevron-down");
+		modelBtn.setAttr("aria-label", "Choose the model for new sessions");
+		modelBtn.addEventListener("click", (e) => this.openModelMenu(e));
+
+		// Right-aligned status group: stop (only mid-turn), connection, activity.
+		const status = toolbar.createDiv({ cls: "occ-status" });
+		this.interruptBtn = status.createEl("button", { cls: "occ-tool-btn occ-stop" });
 		setIcon(this.interruptBtn, "square");
 		this.interruptBtn.setAttr("aria-label", "Stop the current turn");
 		this.interruptBtn.addEventListener("click", () => {
 			if (this.state.sessionId) this.client.interrupt(this.state.sessionId);
 		});
+		this.connIconEl = status.createSpan({ cls: "occ-status-icon" });
+		this.connIconEl.addEventListener("click", () => this.openStatusLegend());
+		this.activityIconEl = status.createSpan({ cls: "occ-status-icon" });
+		this.activityIconEl.addEventListener("click", () => this.openStatusLegend());
 
 		this.pickerEl = root.createDiv({ cls: "occ-picker" });
 		this.pickerEl.style.display = "none";
@@ -139,8 +148,8 @@ export class ChatView extends ItemView {
 
 	private startNewSession(): void {
 		this.pickerOpen = false;
-		this.state = { ...initialState(this.modelSelect.value), connection: this.state.connection };
-		this.client.newSession(this.modelSelect.value);
+		this.state = { ...initialState(this.selectedModel), connection: this.state.connection };
+		this.client.newSession(this.selectedModel);
 		this.render();
 	}
 
@@ -172,7 +181,7 @@ export class ChatView extends ItemView {
 		this.pickerOpen = false;
 		this.pendingText = undefined;
 		// Clear the current transcript; the resumed session's history replays in.
-		this.state = { ...initialState(this.modelSelect.value), connection: this.state.connection };
+		this.state = { ...initialState(this.selectedModel), connection: this.state.connection };
 		this.client.resumeSession(sessionId);
 		this.render();
 	}
@@ -187,7 +196,7 @@ export class ChatView extends ItemView {
 		} else {
 			// no session yet — open one and flush the text when it is ready.
 			this.pendingText = text;
-			this.client.newSession(this.modelSelect.value);
+			this.client.newSession(this.selectedModel);
 			this.state = appendUserMessage(this.state, text);
 		}
 		this.render();
@@ -221,7 +230,7 @@ export class ChatView extends ItemView {
 	// -- rendering -----------------------------------------------------------
 
 	private render(): void {
-		this.renderBadges();
+		this.renderStatus();
 		this.renderPicker();
 		this.renderTodos();
 		this.renderMessages();
@@ -288,7 +297,7 @@ export class ChatView extends ItemView {
 				if (this.state.sessionId === sessionId) {
 					// We deleted the session we were viewing — reset the transcript.
 					this.pendingText = undefined;
-					this.state = { ...initialState(this.modelSelect.value), connection: this.state.connection };
+					this.state = { ...initialState(this.selectedModel), connection: this.state.connection };
 				}
 				this.refreshSessions();
 				this.render();
@@ -321,14 +330,53 @@ export class ChatView extends ItemView {
 		return Date.now() - this.sessionsLastOk > STALE_AFTER_MS ? `⚠ May be stale — updated ${rel}` : `Updated ${rel}`;
 	}
 
-	private renderBadges(): void {
-		this.badgeEl.className = `occ-badge occ-${this.state.connection}`;
-		this.badgeEl.setText(this.state.connection);
-		const writer = this.state.sessionId ? (this.state.isWriter ? "" : " (mirroring)") : "";
-		this.statusEl.className = `occ-badge occ-${this.state.status}`;
-		this.statusEl.setText(this.state.status + writer);
-		// The stop button only does something mid-turn; disable it otherwise.
-		this.interruptBtn.disabled = this.state.status !== "working";
+	private renderStatus(): void {
+		const conn = this.state.connection;
+		setIcon(this.connIconEl, conn === "connected" ? "wifi" : conn === "connecting" ? "loader" : "wifi-off");
+		this.connIconEl.className = `occ-status-icon occ-conn-${conn}`;
+		this.connIconEl.setAttr("aria-label", `Connection: ${conn}`);
+
+		const mirroring = !!this.state.sessionId && !this.state.isWriter;
+		let icon = "check";
+		let cls = "idle";
+		let label = "Idle — ready";
+		if (mirroring) {
+			[icon, cls, label] = ["eye", "mirroring", "Mirroring — read-only"];
+		} else if (this.state.status === "awaiting_permission") {
+			[icon, cls, label] = ["alert-triangle", "awaiting", "Awaiting your permission"];
+		} else if (this.state.status === "working") {
+			[icon, cls, label] = ["loader", "working", "Working…"];
+		}
+		setIcon(this.activityIconEl, icon);
+		this.activityIconEl.className = `occ-status-icon occ-act-${cls}`;
+		this.activityIconEl.setAttr("aria-label", label);
+
+		// The stop button only matters mid-turn; reserve its slot (no layout jump).
+		const working = this.state.status === "working";
+		this.interruptBtn.style.visibility = working ? "visible" : "hidden";
+		this.interruptBtn.disabled = !working;
+
+		this.modelLabelEl.setText(MODEL_OPTIONS[this.selectedModel] ?? this.selectedModel);
+	}
+
+	private openModelMenu(evt: MouseEvent): void {
+		const menu = new Menu();
+		for (const [value, label] of Object.entries(MODEL_OPTIONS)) {
+			menu.addItem((item) =>
+				item
+					.setTitle(label)
+					.setChecked(value === this.selectedModel)
+					.onClick(() => {
+						this.selectedModel = value;
+						this.modelLabelEl.setText(label);
+					})
+			);
+		}
+		menu.showAtMouseEvent(evt);
+	}
+
+	private openStatusLegend(): void {
+		new StatusLegendModal(this.app).open();
 	}
 
 	private renderTodos(): void {
@@ -448,6 +496,41 @@ class ConfirmModal extends Modal {
 			this.onConfirm();
 			this.close();
 		});
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+}
+
+/** Dismissable overlay documenting what each status icon means. */
+const STATUS_LEGEND: ReadonlyArray<{ heading: string } | { icon: string; cls: string; desc: string }> = [
+	{ heading: "Connection" },
+	{ icon: "wifi", cls: "occ-conn-connected", desc: "Connected to the server" },
+	{ icon: "loader", cls: "occ-conn-connecting", desc: "Connecting…" },
+	{ icon: "wifi-off", cls: "occ-conn-disconnected", desc: "Disconnected" },
+	{ heading: "Activity" },
+	{ icon: "check", cls: "occ-act-idle", desc: "Idle — ready for your message" },
+	{ icon: "loader", cls: "occ-act-working", desc: "Working — Claude is responding" },
+	{ icon: "alert-triangle", cls: "occ-act-awaiting", desc: "Awaiting your permission for a destructive tool" },
+	{ icon: "eye", cls: "occ-act-mirroring", desc: "Mirroring — another client is the writer; you're read-only" },
+];
+
+class StatusLegendModal extends Modal {
+	onOpen(): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.createEl("h3", { text: "Status icons" });
+		for (const entry of STATUS_LEGEND) {
+			if ("heading" in entry) {
+				contentEl.createEl("h4", { text: entry.heading });
+				continue;
+			}
+			const row = contentEl.createDiv({ cls: "occ-legend-row" });
+			const ic = row.createSpan({ cls: `occ-status-icon ${entry.cls}` });
+			setIcon(ic, entry.icon);
+			row.createSpan({ text: entry.desc });
+		}
 	}
 
 	onClose(): void {

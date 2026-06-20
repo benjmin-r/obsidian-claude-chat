@@ -502,6 +502,26 @@ export function normalizePath(path: string): string {
 	return path.replace(/\\/g, "/").replace(/\/+/g, "/");
 }
 
+class MenuItem {
+	setTitle = jest.fn().mockReturnThis();
+	setIcon = jest.fn().mockReturnThis();
+	setChecked = jest.fn().mockReturnThis();
+	setDisabled = jest.fn().mockReturnThis();
+	onClick = jest.fn().mockReturnThis();
+}
+
+export class Menu {
+	addItem(cb: (item: MenuItem) => void): this {
+		cb(new MenuItem());
+		return this;
+	}
+	addSeparator(): this {
+		return this;
+	}
+	showAtMouseEvent = jest.fn();
+	showAtPosition = jest.fn();
+}
+
 export class TFile {
 	path: string;
 	basename: string;
