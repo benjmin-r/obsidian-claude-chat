@@ -238,6 +238,15 @@
 	background-color: var(--background-modifier-hover);
 }
 
+.occ-picker-item.occ-picker-current {
+	background-color: var(--background-modifier-hover);
+	box-shadow: inset 3px 0 0 var(--interactive-accent);
+}
+
+.occ-picker-item.occ-picker-current .occ-picker-title {
+	font-weight: var(--font-bold);
+}
+
 .occ-picker-item .occ-picker-title {
 	display: block;
 	white-space: nowrap;

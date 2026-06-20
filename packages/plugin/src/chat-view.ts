@@ -244,10 +244,15 @@ export class ChatView extends ItemView {
 		}
 		for (const s of this.state.sessions) {
 			const item = this.pickerEl.createDiv({ cls: "occ-picker-item" });
+			const isCurrent = !!this.state.sessionId && s.sessionId === this.state.sessionId;
+			if (isCurrent) {
+				item.addClass("occ-picker-current");
+				item.setAttr("aria-current", "true");
+			}
 			const main = item.createDiv({ cls: "occ-picker-main" });
 			main.createSpan({ cls: "occ-picker-title", text: (s.title && s.title.trim()) || s.sessionId });
 			const when = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "";
-			const meta = [s.status, when].filter(Boolean).join(" · ");
+			const meta = [isCurrent ? "● current" : s.status, when].filter(Boolean).join(" · ");
 			if (meta) main.createDiv({ cls: "occ-picker-meta", text: meta });
 			main.addEventListener("click", () => this.resumeSession(s.sessionId));
 
