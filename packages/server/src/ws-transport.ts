@@ -4,6 +4,7 @@
  * `connection.ts`; this module only does socket plumbing + JSON framing.
  */
 
+import type { IncomingMessage } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { BridgeEvent, ClientMessage } from "@occ/protocol";
 import { Connection, createWriterRegistry, type WriterRegistry } from "./connection";
@@ -42,9 +43,17 @@ export interface Transport {
 export function startTransport(config: ServerConfig, manager: SessionManager): Transport {
 	const writers = createWriterRegistry();
 	const wss = new WebSocketServer({ host: config.host, port: config.port });
+	let connSeq = 0;
 
-	wss.on("connection", (ws: WebSocket) => {
+	wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
+		const id = ++connSeq;
+		const ip = req.socket.remoteAddress ?? "?";
+		// Lightweight observability for the testing phase. We never log message
+		// content (e.g. user_message text) or the bearer token — only types/ids.
+		console.log(`[occ] #${id} connected (${ip})`);
+
 		const send = (event: BridgeEvent): void => {
+			if (event.type === "error") console.warn(`[occ] #${id} -> error: ${event.message}`);
 			if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(event));
 		};
 		const connection = new Connection({ manager, token: config.token, writers, send });
@@ -52,14 +61,22 @@ export function startTransport(config: ServerConfig, manager: SessionManager): T
 		ws.on("message", (data) => {
 			const msg = parseClientMessage(data.toString());
 			if (!msg) {
+				console.warn(`[occ] #${id} malformed frame`);
 				send({ type: "error", message: "Malformed message." });
 				return;
 			}
+			console.log(`[occ] #${id} <- ${msg.type}${"sessionId" in msg && msg.sessionId ? ` (${msg.sessionId})` : ""}`);
 			const result = connection.handle(msg);
-			if (result.close) ws.close();
+			if (result.close) {
+				console.warn(`[occ] #${id} closing (auth/protocol rejected)`);
+				ws.close();
+			}
 		});
 
-		ws.on("close", () => connection.close());
+		ws.on("close", () => {
+			console.log(`[occ] #${id} disconnected`);
+			connection.close();
+		});
 		ws.on("error", () => connection.close());
 	});
 
