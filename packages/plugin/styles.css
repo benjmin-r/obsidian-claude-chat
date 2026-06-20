@@ -136,6 +136,29 @@
 	align-self: flex-start;
 }
 
+/* Copy buttons (always faintly visible so they're tappable on touch). */
+.occ-bubble {
+	position: relative;
+}
+.occ-bubble-content {
+	padding-right: 22px;
+}
+.occ-msg-copy {
+	position: absolute;
+	top: 4px;
+	right: 4px;
+	padding: 2px 4px;
+	border-radius: 4px;
+	background-color: var(--background-primary);
+	opacity: 0.45;
+	cursor: pointer;
+	line-height: 1;
+}
+.occ-msg-copy:hover,
+.occ-msg-copy:active {
+	opacity: 0.95;
+}
+
 .occ-thinking {
 	font-style: italic;
 	color: var(--text-muted);

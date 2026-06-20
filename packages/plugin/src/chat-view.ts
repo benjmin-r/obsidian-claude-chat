@@ -391,10 +391,16 @@ export class ChatView extends ItemView {
 		this.messagesEl.empty();
 		for (const item of this.state.items) {
 			if (item.kind === "user") {
-				this.messagesEl.createDiv({ cls: "occ-bubble occ-user", text: item.text });
+				const bubble = this.messagesEl.createDiv({ cls: "occ-bubble occ-user" });
+				bubble.createDiv({ text: item.text });
+				this.addMsgCopy(bubble, item.text);
 			} else if (item.kind === "assistant") {
-				const el = this.messagesEl.createDiv({ cls: "occ-bubble occ-assistant" });
-				void MarkdownRenderer.render(this.app, item.text, el, "", this);
+				const bubble = this.messagesEl.createDiv({ cls: "occ-bubble occ-assistant" });
+				this.addMsgCopy(bubble, item.text);
+				const content = bubble.createDiv({ cls: "occ-bubble-content" });
+				// Obsidian's MarkdownRenderer already adds a native copy button to
+				// each code block, so we don't add our own there.
+				void MarkdownRenderer.render(this.app, item.text, content, "", this);
 			} else if (item.kind === "thinking") {
 				this.messagesEl.createDiv({ cls: "occ-thinking", text: item.text });
 			} else {
@@ -402,6 +408,31 @@ export class ChatView extends ItemView {
 			}
 		}
 	}
+
+	/** Copy `text` to the clipboard with a brief confirmation. */
+	private copyToClipboard(text: string): void {
+		const clip = navigator.clipboard;
+		if (!clip) {
+			new Notice("Clipboard unavailable", 2000);
+			return;
+		}
+		void clip.writeText(text).then(
+			() => new Notice("Copied", 1200),
+			() => new Notice("Copy failed", 2000)
+		);
+	}
+
+	/** Add a small copy button to a message bubble (copies the whole message). */
+	private addMsgCopy(bubble: HTMLElement, text: string): void {
+		const btn = bubble.createEl("button", { cls: "occ-msg-copy" });
+		setIcon(btn, "copy");
+		btn.setAttr("aria-label", "Copy message");
+		btn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			this.copyToClipboard(text);
+		});
+	}
+
 
 	private renderTool(entry: { name: string; input: unknown; result?: { content: string; isError: boolean } }): void {
 		const cls = entry.result?.isError ? "occ-tool occ-tool-error" : "occ-tool";
