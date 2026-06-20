@@ -4,7 +4,7 @@
  * `sdk-adapter.ts` (the `query()` shell) and `ws-transport.ts` (the socket).
  */
 
-import type { SdkMessage } from "@occ/protocol";
+import type { HistoryMessage, SdkMessage } from "@occ/protocol";
 
 export interface PermissionAllow {
 	behavior: "allow";
@@ -51,3 +51,16 @@ export type RunQuery = (prompt: AsyncIterable<UserInputMessage>, options: QueryO
 
 /** Injected clock, so tests are deterministic. */
 export type Clock = () => number;
+
+/** Summary of a persisted session from the CLI store. */
+export interface StoredSessionInfo {
+	sessionId: string;
+	title: string;
+	updatedAt: number;
+}
+
+/** Enumerate persisted sessions for a project dir (real = SDK `listSessions`). */
+export type ListStored = (cwd: string) => Promise<StoredSessionInfo[]>;
+
+/** Load a persisted session's messages (real = SDK `getSessionMessages`). */
+export type LoadHistory = (cwd: string, sessionId: string) => Promise<HistoryMessage[]>;

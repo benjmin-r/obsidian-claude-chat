@@ -85,6 +85,8 @@ export function applyEvent(state: ChatState, event: BridgeEvent): ChatState {
 			return appendDelta(state, "assistant", event.text);
 		case "thinking_delta":
 			return appendDelta(state, "thinking", event.text);
+		case "user_echo":
+			return { ...state, items: [...state.items, { kind: "user", text: event.text }], openKind: null };
 		case "tool_use":
 			return {
 				...state,

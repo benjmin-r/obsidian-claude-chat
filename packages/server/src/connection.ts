@@ -86,7 +86,10 @@ export class Connection {
 				this.onResume(msg.sessionId);
 				return {};
 			case "list_sessions":
-				this.deps.send({ type: "sessions_list", sessions: this.deps.manager.list() });
+				this.deps.manager
+					.listSummaries()
+					.then((sessions) => this.deps.send({ type: "sessions_list", sessions }))
+					.catch(() => this.deps.send({ type: "sessions_list", sessions: this.deps.manager.list() }));
 				return {};
 			default:
 				return {};
@@ -137,8 +140,13 @@ export class Connection {
 	}
 
 	private onResume(sessionId: string): void {
-		const actor = this.deps.manager.resume(sessionId);
-		this.attach(actor);
+		this.deps.manager
+			.resumeWithHistory(sessionId)
+			.then((actor) => this.attach(actor))
+			.catch((err: unknown) => {
+				const message = err instanceof Error ? err.message : String(err);
+				this.deps.send({ type: "error", sessionId, message: `Failed to resume: ${message}` });
+			});
 	}
 
 	private withActor(sessionId: string, fn: (actor: SessionActor) => void): void {

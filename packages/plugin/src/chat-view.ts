@@ -7,6 +7,20 @@ import { applyEvent, appendUserMessage, clearPermission, initialState, setConnec
 
 export const VIEW_TYPE_CLAUDE_CHAT = "claude-chat-view";
 
+/** After this long without a successful refresh, the session list is flagged stale. */
+const STALE_AFTER_MS = 60_000;
+
+function relativeTime(ms: number): string {
+	const s = Math.round(ms / 1000);
+	if (s < 5) return "just now";
+	if (s < 60) return `${s}s ago`;
+	const m = Math.round(s / 60);
+	if (m < 60) return `${m}m ago`;
+	const h = Math.round(m / 60);
+	if (h < 24) return `${h}h ago`;
+	return `${Math.round(h / 24)}d ago`;
+}
+
 /**
  * The sidebar chat view. Thin DOM layer over the pure `view-model` reducer and
  * the injectable `BridgeClient`; both of those hold the tested logic. Uses only
@@ -22,6 +36,11 @@ export class ChatView extends ItemView {
 	private messagesEl!: HTMLElement;
 	private permissionEl!: HTMLElement;
 	private todosEl!: HTMLElement;
+	private pickerEl!: HTMLElement;
+	private pickerOpen = false;
+	private sessionsLoading = false;
+	private sessionsLastOk = 0;
+	private sessionsRefreshTimer: number | undefined;
 	private inputEl!: HTMLTextAreaElement;
 	private modelSelect!: HTMLSelectElement;
 
@@ -64,6 +83,7 @@ export class ChatView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
+		if (this.sessionsRefreshTimer !== undefined) window.clearTimeout(this.sessionsRefreshTimer);
 		this.client?.disconnect();
 	}
 
@@ -87,8 +107,8 @@ export class ChatView extends ItemView {
 
 		const listBtn = toolbar.createEl("button");
 		setIcon(listBtn, "list");
-		listBtn.setAttr("aria-label", "List sessions");
-		listBtn.addEventListener("click", () => this.client.listSessions());
+		listBtn.setAttr("aria-label", "Resume a session");
+		listBtn.addEventListener("click", () => this.togglePicker());
 
 		const interruptBtn = toolbar.createEl("button");
 		setIcon(interruptBtn, "square");
@@ -97,6 +117,8 @@ export class ChatView extends ItemView {
 			if (this.state.sessionId) this.client.interrupt(this.state.sessionId);
 		});
 
+		this.pickerEl = root.createDiv({ cls: "occ-picker" });
+		this.pickerEl.style.display = "none";
 		this.todosEl = root.createEl("ul", { cls: "occ-todos" });
 		this.messagesEl = root.createDiv({ cls: "occ-messages" });
 		this.permissionEl = root.createDiv();
@@ -115,8 +137,42 @@ export class ChatView extends ItemView {
 	}
 
 	private startNewSession(): void {
+		this.pickerOpen = false;
 		this.state = { ...initialState(this.modelSelect.value), connection: this.state.connection };
 		this.client.newSession(this.modelSelect.value);
+		this.render();
+	}
+
+	private togglePicker(): void {
+		this.pickerOpen = !this.pickerOpen;
+		// Always fetch live data on open (every open fires a request, by design).
+		if (this.pickerOpen) this.refreshSessions();
+		this.renderPicker();
+	}
+
+	private refreshSessions(): void {
+		if (this.sessionsRefreshTimer !== undefined) window.clearTimeout(this.sessionsRefreshTimer);
+		if (!this.client || !this.client.isConnected()) {
+			// Can't refresh; renderPicker shows the offline/stale note over last-known data.
+			this.sessionsLoading = false;
+			return;
+		}
+		this.sessionsLoading = true;
+		this.client.listSessions();
+		// If no `sessions_list` reply arrives, drop the spinner so the stale note shows.
+		this.sessionsRefreshTimer = window.setTimeout(() => {
+			this.sessionsLoading = false;
+			this.sessionsRefreshTimer = undefined;
+			this.renderPicker();
+		}, 5000);
+	}
+
+	private resumeSession(sessionId: string): void {
+		this.pickerOpen = false;
+		this.pendingText = undefined;
+		// Clear the current transcript; the resumed session's history replays in.
+		this.state = { ...initialState(this.modelSelect.value), connection: this.state.connection };
+		this.client.resumeSession(sessionId);
 		this.render();
 	}
 
@@ -138,6 +194,14 @@ export class ChatView extends ItemView {
 
 	private onEvent(event: BridgeEvent): void {
 		this.state = applyEvent(this.state, event);
+		if (event.type === "sessions_list") {
+			this.sessionsLoading = false;
+			this.sessionsLastOk = Date.now();
+			if (this.sessionsRefreshTimer !== undefined) {
+				window.clearTimeout(this.sessionsRefreshTimer);
+				this.sessionsRefreshTimer = undefined;
+			}
+		}
 		if (event.type === "session_status" && this.pendingText && event.sessionId) {
 			this.client.userMessage(event.sessionId, this.pendingText);
 			this.pendingText = undefined;
@@ -157,10 +221,50 @@ export class ChatView extends ItemView {
 
 	private render(): void {
 		this.renderBadges();
+		this.renderPicker();
 		this.renderTodos();
 		this.renderMessages();
 		this.renderPermission();
 		this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+	}
+
+	private renderPicker(): void {
+		this.pickerEl.style.display = this.pickerOpen ? "" : "none";
+		if (!this.pickerOpen) return;
+		this.pickerEl.empty();
+
+		const status = this.pickerEl.createDiv({ cls: "occ-picker-status" });
+		status.setText(this.pickerStatusText());
+		if (this.pickerStatusIsWarning()) status.addClass("occ-picker-stale");
+
+		if (this.state.sessions.length === 0) {
+			if (!this.sessionsLoading) this.pickerEl.createDiv({ cls: "occ-picker-empty", text: "No sessions found." });
+			return;
+		}
+		for (const s of this.state.sessions) {
+			const item = this.pickerEl.createDiv({ cls: "occ-picker-item" });
+			item.createSpan({ cls: "occ-picker-title", text: (s.title && s.title.trim()) || s.sessionId });
+			const when = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "";
+			const meta = [s.status, when].filter(Boolean).join(" · ");
+			if (meta) item.createDiv({ cls: "occ-picker-meta", text: meta });
+			item.addEventListener("click", () => this.resumeSession(s.sessionId));
+		}
+	}
+
+	private pickerStatusIsWarning(): boolean {
+		if (!this.client || !this.client.isConnected()) return true;
+		if (this.sessionsLoading || !this.sessionsLastOk) return false;
+		return Date.now() - this.sessionsLastOk > STALE_AFTER_MS;
+	}
+
+	private pickerStatusText(): string {
+		const rel = this.sessionsLastOk ? relativeTime(Date.now() - this.sessionsLastOk) : "";
+		if (!this.client || !this.client.isConnected()) {
+			return this.sessionsLastOk ? `⚠ Offline — list may be stale (updated ${rel})` : "⚠ Offline — can't load sessions";
+		}
+		if (this.sessionsLoading) return this.sessionsLastOk ? `Refreshing… (updated ${rel})` : "Loading sessions…";
+		if (!this.sessionsLastOk) return "";
+		return Date.now() - this.sessionsLastOk > STALE_AFTER_MS ? `⚠ May be stale — updated ${rel}` : `Updated ${rel}`;
 	}
 
 	private renderBadges(): void {

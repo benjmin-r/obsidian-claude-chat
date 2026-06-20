@@ -4,7 +4,7 @@
  */
 
 import { loadConfig } from "./config";
-import { runQuery } from "./sdk-adapter";
+import { listStored, loadHistory, runQuery } from "./sdk-adapter";
 import { SessionManager } from "./session-manager";
 import { startTransport } from "./ws-transport";
 
@@ -17,6 +17,8 @@ function main(): void {
 			runQuery,
 			now: () => Date.now(),
 			newHandleId: () => `new-${Date.now()}-${(counter += 1)}`,
+			listStored,
+			loadHistory,
 		},
 		{ cwd: config.vaultCwd, defaultModel: config.defaultModel, bufferLimit: config.bufferLimit }
 	);

@@ -1,13 +1,19 @@
 import type { BridgeEvent } from "@occ/protocol";
 import { Connection, createWriterRegistry } from "../src/connection";
 import { SessionManager } from "../src/session-manager";
-import { makeFakeQuery } from "./fake-query";
+import { flush, makeFakeQuery } from "./fake-query";
 
 function setup() {
 	const fake = makeFakeQuery();
 	let n = 0;
 	const manager = new SessionManager(
-		{ runQuery: fake.runQuery, now: () => 1, newHandleId: () => `h${(n += 1)}` },
+		{
+			runQuery: fake.runQuery,
+			now: () => 1,
+			newHandleId: () => `h${(n += 1)}`,
+			listStored: async () => [],
+			loadHistory: async () => [],
+		},
 		{ cwd: "/v", defaultModel: "m" }
 	);
 	const writers = createWriterRegistry();
@@ -76,15 +82,43 @@ describe("Connection session flow", () => {
 		expect(sent.some((e) => e.type === "error" && e.message.includes("ghost"))).toBe(true);
 	});
 
-	it("lists sessions", () => {
+	it("lists sessions (active merged with stored)", async () => {
 		const { mkConn } = setup();
 		const { conn, sent } = mkConn();
 		conn.handle({ type: "hello", token: "secret" });
 		conn.handle({ type: "new_session" });
 		conn.handle({ type: "list_sessions" });
+		await flush();
 		const list = sent.find((e) => e.type === "sessions_list");
 		expect(list).toMatchObject({ type: "sessions_list" });
 		expect((list as { sessions: unknown[] }).sessions).toHaveLength(1);
+	});
+
+	it("resumes a session and replays its stored history", async () => {
+		const fake = makeFakeQuery();
+		let n = 0;
+		const manager = new SessionManager(
+			{
+				runQuery: fake.runQuery,
+				now: () => 1,
+				newHandleId: () => `h${(n += 1)}`,
+				listStored: async () => [{ sessionId: "old-1", title: "Old chat", updatedAt: 5 }],
+				loadHistory: async () => [
+					{ type: "user", message: { content: "earlier question" } },
+					{ type: "assistant", message: { content: [{ type: "text", text: "earlier answer" }] } },
+				],
+			},
+			{ cwd: "/v", defaultModel: "m" }
+		);
+		const writers = createWriterRegistry();
+		const sent: BridgeEvent[] = [];
+		const conn = new Connection({ manager, token: "secret", writers, send: (e) => sent.push(e) });
+		conn.handle({ type: "hello", token: "secret" });
+		conn.handle({ type: "resume_session", sessionId: "old-1" });
+		await flush();
+		await flush();
+		expect(sent.some((e) => e.type === "user_echo" && e.text === "earlier question")).toBe(true);
+		expect(sent.some((e) => e.type === "assistant_text_delta" && e.text === "earlier answer")).toBe(true);
 	});
 
 	it("enforces single-writer across mirrored clients and hands off on close", () => {

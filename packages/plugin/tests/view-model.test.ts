@@ -33,6 +33,11 @@ describe("view-model", () => {
 		expect(s.items).toEqual([{ kind: "assistant", text: "Hello world" }]);
 	});
 
+	it("appends a historical user echo as a user bubble", () => {
+		const s = applyEvent(initialState("m"), { type: "user_echo", sessionId: SID, text: "old question" });
+		expect(s.items.at(-1)).toEqual({ kind: "user", text: "old question" });
+	});
+
 	it("separates thinking from assistant bubbles", () => {
 		const s = reduce([
 			{ type: "thinking_delta", sessionId: SID, text: "hmm " },

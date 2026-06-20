@@ -158,6 +158,17 @@ export class SessionActor {
 		return () => this.listeners.delete(listener);
 	}
 
+	/**
+	 * Pre-fill the replay buffer with a resumed session's prior transcript, so
+	 * the first client to attach repaints the history. Call before any attach.
+	 */
+	seedHistory(events: RenderEvent[]): void {
+		for (const event of events) {
+			this.buffer.push(event);
+			if (this.buffer.length > this.bufferLimit) this.buffer.shift();
+		}
+	}
+
 	statusEvent(): SessionStatusEvent {
 		return {
 			type: "session_status",

@@ -6,8 +6,9 @@
  * still hold the provisional id keep resolving to the same actor.
  */
 
-import type { SessionSummary } from "@occ/protocol";
+import { mapHistoryMessages, type SessionSummary } from "@occ/protocol";
 import { SessionActor, type SessionActorDeps } from "./session-actor";
+import type { ListStored, LoadHistory } from "./ports";
 
 export interface SessionManagerConfig {
 	cwd: string;
@@ -18,6 +19,10 @@ export interface SessionManagerConfig {
 export interface SessionManagerDeps extends SessionActorDeps {
 	/** generates unique provisional handle ids. */
 	newHandleId: () => string;
+	/** enumerate persisted sessions from the CLI store. */
+	listStored: ListStored;
+	/** load a persisted session's prior transcript. */
+	loadHistory: LoadHistory;
 }
 
 export class SessionManager {
@@ -57,12 +62,55 @@ export class SessionManager {
 		return actor;
 	}
 
+	/** Resume a session by id, seeding its replay buffer with the stored transcript. */
+	async resumeWithHistory(sessionId: string): Promise<SessionActor> {
+		const existing = this.index.get(sessionId);
+		if (existing) return existing;
+		const actor = new SessionActor(this.deps, {
+			handleId: sessionId,
+			cwd: this.config.cwd,
+			model: this.config.defaultModel,
+			resume: sessionId,
+			bufferLimit: this.config.bufferLimit,
+		});
+		this.register(actor, sessionId);
+		try {
+			const messages = await this.deps.loadHistory(this.config.cwd, sessionId);
+			actor.seedHistory(mapHistoryMessages(messages, sessionId));
+		} catch {
+			// history is best-effort; resume still works for the next turn.
+		}
+		return actor;
+	}
+
 	get(id: string): SessionActor | undefined {
 		return this.index.get(id);
 	}
 
 	list(): SessionSummary[] {
 		return [...this.actors].map((a) => a.summary());
+	}
+
+	/** Active in-memory sessions merged with persisted ones from the store, newest first. */
+	async listSummaries(): Promise<SessionSummary[]> {
+		const active = this.list();
+		const activeIds = new Set(active.map((s) => s.sessionId));
+		let stored: SessionSummary[] = [];
+		try {
+			stored = (await this.deps.listStored(this.config.cwd))
+				.filter((s) => !activeIds.has(s.sessionId))
+				.map((s) => ({
+					sessionId: s.sessionId,
+					title: s.title,
+					model: this.config.defaultModel,
+					status: "idle" as const,
+					cwd: this.config.cwd,
+					updatedAt: s.updatedAt,
+				}));
+		} catch {
+			stored = [];
+		}
+		return [...active, ...stored].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
 	}
 
 	private register(actor: SessionActor, id: string): void {

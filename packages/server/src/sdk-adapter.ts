@@ -7,8 +7,8 @@
  * `ANTHROPIC_API_KEY` must remain unset in the process env (see config.ts).
  */
 
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { RunQuery } from "./ports";
+import { getSessionMessages, listSessions, query } from "@anthropic-ai/claude-agent-sdk";
+import type { ListStored, LoadHistory, RunQuery } from "./ports";
 
 export const runQuery: RunQuery = (prompt, options) => {
 	const q = query({
@@ -24,4 +24,20 @@ export const runQuery: RunQuery = (prompt, options) => {
 		} as never,
 	});
 	return q as unknown as ReturnType<RunQuery>;
+};
+
+/** Enumerate persisted sessions for the vault dir, newest first, titled for display. */
+export const listStored: ListStored = async (cwd) => {
+	const sessions = await listSessions({ dir: cwd, limit: 50 });
+	return sessions.map((s) => ({
+		sessionId: s.sessionId,
+		title: (s.customTitle || s.summary || s.firstPrompt || s.sessionId).trim(),
+		updatedAt: s.lastModified,
+	}));
+};
+
+/** Load a persisted session's prior messages for transcript replay. */
+export const loadHistory: LoadHistory = async (cwd, sessionId) => {
+	const messages = await getSessionMessages(sessionId, { dir: cwd });
+	return messages.map((m) => ({ type: m.type, message: m.message }));
 };

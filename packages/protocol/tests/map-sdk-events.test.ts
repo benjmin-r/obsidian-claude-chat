@@ -1,4 +1,4 @@
-import { extractTodos, mapSdkEvent, stringifyToolResult } from "../src/map-sdk-events";
+import { extractTodos, mapHistoryMessages, mapSdkEvent, stringifyToolResult, type HistoryMessage } from "../src/map-sdk-events";
 import type { SdkMessage } from "../src/sdk-types";
 
 const SID = "sess-1";
@@ -120,6 +120,40 @@ describe("stringifyToolResult", () => {
 		expect(stringifyToolResult(null)).toBe("");
 		expect(stringifyToolResult(undefined)).toBe("");
 		expect(stringifyToolResult({ a: 1 })).toBe('{"a":1}');
+	});
+});
+
+describe("mapHistoryMessages", () => {
+	it("emits user echoes, assistant text (incl. text, unlike live), tool use and results", () => {
+		const msgs: HistoryMessage[] = [
+			{ type: "user", message: { content: "hello" } },
+			{
+				type: "assistant",
+				message: {
+					content: [
+						{ type: "text", text: "hi!" },
+						{ type: "tool_use", id: "t1", name: "Read", input: { file_path: "/x" } },
+					],
+				},
+			},
+			{ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "data", is_error: false }] } },
+			{ type: "assistant", message: { content: [{ type: "text", text: "done" }] } },
+			{ type: "system", message: {} },
+		];
+		expect(mapHistoryMessages(msgs, "s")).toEqual([
+			{ type: "user_echo", sessionId: "s", text: "hello" },
+			{ type: "assistant_text_delta", sessionId: "s", text: "hi!" },
+			{ type: "tool_use", sessionId: "s", toolUseId: "t1", name: "Read", input: { file_path: "/x" } },
+			{ type: "tool_result", sessionId: "s", toolUseId: "t1", content: "data", isError: false },
+			{ type: "assistant_text_delta", sessionId: "s", text: "done" },
+		]);
+	});
+
+	it("skips blank user turns and reads array text content", () => {
+		expect(mapHistoryMessages([{ type: "user", message: { content: "   " } }], "s")).toEqual([]);
+		expect(mapHistoryMessages([{ type: "user", message: { content: [{ type: "text", text: "x" }] } }], "s")).toEqual([
+			{ type: "user_echo", sessionId: "s", text: "x" },
+		]);
 	});
 });
 

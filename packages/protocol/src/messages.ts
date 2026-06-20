@@ -58,6 +58,13 @@ export interface ThinkingDeltaEvent {
 	text: string;
 }
 
+/** A historical user turn, replayed when resuming a past session. */
+export interface UserEchoEvent {
+	type: "user_echo";
+	sessionId: string;
+	text: string;
+}
+
 /** A tool the agent invoked (non-TodoWrite). */
 export interface ToolUseEvent {
 	type: "tool_use";
@@ -129,6 +136,7 @@ export type BridgeEvent =
 	| ReadyEvent
 	| AssistantTextDeltaEvent
 	| ThinkingDeltaEvent
+	| UserEchoEvent
 	| ToolUseEvent
 	| ToolResultEvent
 	| TodoUpdateEvent
@@ -142,6 +150,7 @@ export type BridgeEvent =
 export type RenderEvent =
 	| AssistantTextDeltaEvent
 	| ThinkingDeltaEvent
+	| UserEchoEvent
 	| ToolUseEvent
 	| ToolResultEvent
 	| TodoUpdateEvent

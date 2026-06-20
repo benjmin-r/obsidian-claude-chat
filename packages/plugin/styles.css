@@ -121,3 +121,90 @@
 	resize: vertical;
 	min-height: 48px;
 }
+
+/* Mobile-first: wrap long lines / code instead of horizontal scrollbars. */
+.occ-chat pre,
+.occ-chat code {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+	max-width: 100%;
+}
+
+.occ-bubble pre {
+	margin: 6px 0;
+	padding: 8px 10px;
+	border-radius: 6px;
+	background-color: var(--background-primary-alt);
+	font-size: 0.85em;
+	overflow-x: hidden;
+}
+
+.occ-bubble pre code {
+	background: none;
+	padding: 0;
+	white-space: pre-wrap;
+}
+
+/* Tool blocks already have a frame; keep their <pre> flush and wrapping. */
+.occ-tool pre {
+	margin: 4px 0 0;
+	padding: 0;
+	background: none;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+/* Session picker */
+.occ-picker {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	margin: 4px 0;
+	max-height: 45%;
+	overflow-y: auto;
+	background-color: var(--background-secondary);
+}
+
+.occ-picker-status {
+	padding: 6px 10px;
+	font-size: 0.75em;
+	color: var(--text-muted);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.occ-picker-status.occ-picker-stale {
+	color: var(--text-warning, var(--text-error));
+}
+
+.occ-picker-empty {
+	padding: 10px;
+	color: var(--text-muted);
+	font-size: 0.9em;
+}
+
+.occ-picker-item {
+	padding: 8px 10px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	cursor: pointer;
+}
+
+.occ-picker-item:last-child {
+	border-bottom: none;
+}
+
+.occ-picker-item:hover,
+.occ-picker-item:active {
+	background-color: var(--background-modifier-hover);
+}
+
+.occ-picker-item .occ-picker-title {
+	display: block;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.occ-picker-item .occ-picker-meta {
+	font-size: 0.75em;
+	color: var(--text-muted);
+}
