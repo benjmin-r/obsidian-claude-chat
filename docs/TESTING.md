@@ -7,8 +7,8 @@ edges are already understood.
 ## Before you start
 
 - Server `claude-anywhere-sdk.service` is `active` and listening on the tailnet.
-- The `claude-chat` plugin is installed + enabled in the vault, with the server
-  URL + token set (pre-seeded in the vault's `data.json`).
+- The `claude-chat` plugin is installed + enabled, with the server URL + token
+  set in its settings.
 - Open the chat from the ribbon (message icon) or command palette → *Open Claude chat*.
 
 **Server-side telemetry:** the server logs connection lifecycle (no message text,
