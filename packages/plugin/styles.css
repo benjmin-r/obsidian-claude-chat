@@ -215,11 +215,17 @@
 	cursor: pointer;
 }
 
-.occ-picker-rename {
+.occ-picker-rename,
+.occ-picker-delete {
 	flex: 0 0 auto;
 	padding: 4px 6px;
 	background: none;
 	box-shadow: none;
+}
+
+.occ-picker-delete:hover,
+.occ-picker-delete:active {
+	color: var(--text-error);
 }
 
 .occ-modal-buttons {

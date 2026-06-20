@@ -67,3 +67,6 @@ export type LoadHistory = (cwd: string, sessionId: string) => Promise<HistoryMes
 
 /** Set a persisted session's title (real = SDK `renameSession`). */
 export type RenameStored = (cwd: string, sessionId: string, title: string) => Promise<void>;
+
+/** Permanently delete a persisted session (real = SDK `deleteSession`). */
+export type DeleteStored = (cwd: string, sessionId: string) => Promise<void>;

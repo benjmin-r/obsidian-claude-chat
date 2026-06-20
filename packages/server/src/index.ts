@@ -4,7 +4,7 @@
  */
 
 import { loadConfig } from "./config";
-import { listStored, loadHistory, renameStored, runQuery } from "./sdk-adapter";
+import { deleteStored, listStored, loadHistory, renameStored, runQuery } from "./sdk-adapter";
 import { SessionManager } from "./session-manager";
 import { startTransport } from "./ws-transport";
 
@@ -20,6 +20,7 @@ function main(): void {
 			listStored,
 			loadHistory,
 			renameStored,
+			deleteStored,
 		},
 		{ cwd: config.vaultCwd, defaultModel: config.defaultModel, bufferLimit: config.bufferLimit }
 	);

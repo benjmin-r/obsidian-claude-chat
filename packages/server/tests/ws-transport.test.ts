@@ -9,6 +9,10 @@ describe("parseClientMessage", () => {
 			sessionId: "s",
 			title: "t",
 		});
+		expect(parseClientMessage('{"type":"delete_session","sessionId":"s"}')).toEqual({
+			type: "delete_session",
+			sessionId: "s",
+		});
 	});
 
 	it("rejects non-JSON", () => {

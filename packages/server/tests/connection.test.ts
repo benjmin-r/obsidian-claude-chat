@@ -14,6 +14,7 @@ function setup() {
 			listStored: async () => [],
 			loadHistory: async () => [],
 			renameStored: async () => undefined,
+			deleteStored: async () => undefined,
 		},
 		{ cwd: "/v", defaultModel: "m" }
 	);
@@ -109,6 +110,7 @@ describe("Connection session flow", () => {
 					{ type: "assistant", message: { content: [{ type: "text", text: "earlier answer" }] } },
 				],
 				renameStored: async () => undefined,
+				deleteStored: async () => undefined,
 			},
 			{ cwd: "/v", defaultModel: "m" }
 		);
@@ -137,6 +139,7 @@ describe("Connection session flow", () => {
 				renameStored: async (_cwd, id, title) => {
 					renamed.push([id, title]);
 				},
+				deleteStored: async () => undefined,
 			},
 			{ cwd: "/v", defaultModel: "m" }
 		);
@@ -151,6 +154,50 @@ describe("Connection session flow", () => {
 		expect(
 			sent.some((e) => e.type === "sessions_list" && e.sessions.some((s) => s.title === "renamed!"))
 		).toBe(true);
+	});
+
+	it("deletes a session and replies with a refreshed list", async () => {
+		const fake = makeFakeQuery();
+		let n = 0;
+		const deleted: string[] = [];
+		let remaining = [{ sessionId: "d1", title: "Doomed", updatedAt: 9 }];
+		const manager = new SessionManager(
+			{
+				runQuery: fake.runQuery,
+				now: () => 1,
+				newHandleId: () => `h${(n += 1)}`,
+				listStored: async () => remaining,
+				loadHistory: async () => [],
+				renameStored: async () => undefined,
+				deleteStored: async (_cwd, id) => {
+					deleted.push(id);
+					remaining = remaining.filter((s) => s.sessionId !== id);
+				},
+			},
+			{ cwd: "/v", defaultModel: "m" }
+		);
+		const writers = createWriterRegistry();
+		const sent: BridgeEvent[] = [];
+		const conn = new Connection({ manager, token: "secret", writers, send: (e) => sent.push(e) });
+		conn.handle({ type: "hello", token: "secret" });
+		conn.handle({ type: "delete_session", sessionId: "d1" });
+		await flush();
+		await flush();
+		expect(deleted).toEqual(["d1"]);
+		const list = sent.filter((e) => e.type === "sessions_list").at(-1);
+		expect(list && list.type === "sessions_list" && list.sessions).toEqual([]);
+	});
+
+	it("deletes the current session and detaches from it", async () => {
+		const { mkConn } = setup();
+		const { conn, sent } = mkConn();
+		conn.handle({ type: "hello", token: "secret" });
+		conn.handle({ type: "new_session" });
+		const sessionId = sessionIdFrom(sent);
+		conn.handle({ type: "delete_session", sessionId });
+		await flush();
+		await flush();
+		expect(sent.some((e) => e.type === "sessions_list")).toBe(true);
 	});
 
 	it("enforces single-writer across mirrored clients and hands off on close", () => {

@@ -88,6 +88,9 @@ export class Connection {
 			case "rename_session":
 				this.onRename(msg.sessionId, msg.title);
 				return {};
+			case "delete_session":
+				this.onDelete(msg.sessionId);
+				return {};
 			case "list_sessions":
 				this.deps.manager
 					.listSummaries()
@@ -160,6 +163,19 @@ export class Connection {
 			.catch((err: unknown) => {
 				const message = err instanceof Error ? err.message : String(err);
 				this.deps.send({ type: "error", sessionId, message: `Rename failed: ${message}` });
+			});
+	}
+
+	private onDelete(sessionId: string): void {
+		// If we're viewing the session being deleted, detach first.
+		if (this.attached?.actor.id === sessionId) this.detach();
+		this.deps.manager
+			.deleteSession(sessionId)
+			.then(() => this.deps.manager.listSummaries())
+			.then((sessions) => this.deps.send({ type: "sessions_list", sessions }))
+			.catch((err: unknown) => {
+				const message = err instanceof Error ? err.message : String(err);
+				this.deps.send({ type: "error", sessionId, message: `Delete failed: ${message}` });
 			});
 	}
 

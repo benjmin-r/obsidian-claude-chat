@@ -8,7 +8,7 @@
 
 import { mapHistoryMessages, type SessionSummary } from "@occ/protocol";
 import { SessionActor, type SessionActorDeps } from "./session-actor";
-import type { ListStored, LoadHistory, RenameStored } from "./ports";
+import type { DeleteStored, ListStored, LoadHistory, RenameStored } from "./ports";
 
 export interface SessionManagerConfig {
 	cwd: string;
@@ -25,6 +25,8 @@ export interface SessionManagerDeps extends SessionActorDeps {
 	loadHistory: LoadHistory;
 	/** set a persisted session's title. */
 	renameStored: RenameStored;
+	/** permanently delete a persisted session. */
+	deleteStored: DeleteStored;
 }
 
 export class SessionManager {
@@ -88,6 +90,31 @@ export class SessionManager {
 	/** Set a session's display title in the store. */
 	async renameSession(sessionId: string, title: string): Promise<void> {
 		await this.deps.renameStored(this.config.cwd, sessionId, title);
+	}
+
+	/**
+	 * Permanently delete a session: remove it from the CLI store AND drop any
+	 * live actor (otherwise it would keep running against a deleted store file).
+	 * Store deletion is best-effort — a brand-new session may not be persisted yet.
+	 */
+	async deleteSession(sessionId: string): Promise<void> {
+		const actor = this.index.get(sessionId);
+		try {
+			await this.deps.deleteStored(this.config.cwd, sessionId);
+		} catch {
+			// not persisted yet (or already gone); still drop the actor below.
+		}
+		if (actor) {
+			try {
+				await actor.interrupt();
+			} catch {
+				// ignore interrupt failures.
+			}
+			this.actors.delete(actor);
+			for (const [id, a] of [...this.index]) {
+				if (a === actor) this.index.delete(id);
+			}
+		}
 	}
 
 	get(id: string): SessionActor | undefined {

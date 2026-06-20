@@ -91,6 +91,10 @@ export class BridgeClient {
 		this.send({ type: "rename_session", sessionId, title });
 	}
 
+	deleteSession(sessionId: string): void {
+		this.send({ type: "delete_session", sessionId });
+	}
+
 	userMessage(sessionId: string, text: string): void {
 		this.send({ type: "user_message", sessionId, text });
 	}

@@ -19,6 +19,7 @@ const CLIENT_MESSAGE_TYPES = new Set([
 	"new_session",
 	"resume_session",
 	"rename_session",
+	"delete_session",
 	"list_sessions",
 ]);
 

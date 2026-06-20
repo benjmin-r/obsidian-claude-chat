@@ -7,8 +7,8 @@
  * `ANTHROPIC_API_KEY` must remain unset in the process env (see config.ts).
  */
 
-import { getSessionMessages, listSessions, query, renameSession } from "@anthropic-ai/claude-agent-sdk";
-import type { ListStored, LoadHistory, RenameStored, RunQuery } from "./ports";
+import { deleteSession, getSessionMessages, listSessions, query, renameSession } from "@anthropic-ai/claude-agent-sdk";
+import type { DeleteStored, ListStored, LoadHistory, RenameStored, RunQuery } from "./ports";
 
 export const runQuery: RunQuery = (prompt, options) => {
 	const q = query({
@@ -44,3 +44,6 @@ export const loadHistory: LoadHistory = async (cwd, sessionId) => {
 
 /** Set a persisted session's display title. */
 export const renameStored: RenameStored = (cwd, sessionId, title) => renameSession(sessionId, title, { dir: cwd });
+
+/** Permanently delete a persisted session from the store. */
+export const deleteStored: DeleteStored = (cwd, sessionId) => deleteSession(sessionId, { dir: cwd });

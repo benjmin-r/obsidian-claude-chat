@@ -250,20 +250,50 @@ export class ChatView extends ItemView {
 				item.setAttr("aria-current", "true");
 			}
 			const main = item.createDiv({ cls: "occ-picker-main" });
-			main.createSpan({ cls: "occ-picker-title", text: (s.title && s.title.trim()) || s.sessionId });
+			const named = s.title && s.title.trim();
+			const startedAgo = s.updatedAt ? relativeTime(Date.now() - s.updatedAt) : "just now";
+			main.createSpan({ cls: "occ-picker-title", text: named || `New session — started ${startedAgo}` });
 			const when = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "";
 			const meta = [isCurrent ? "● current" : s.status, when].filter(Boolean).join(" · ");
 			if (meta) main.createDiv({ cls: "occ-picker-meta", text: meta });
 			main.addEventListener("click", () => this.resumeSession(s.sessionId));
 
+			const label = named || `New session — started ${startedAgo}`;
 			const rename = item.createEl("button", { cls: "occ-picker-rename" });
 			setIcon(rename, "pencil");
 			rename.setAttr("aria-label", "Rename session");
 			rename.addEventListener("click", (e) => {
 				e.stopPropagation();
-				this.openRename(s.sessionId, (s.title && s.title.trim()) || "");
+				this.openRename(s.sessionId, named || "");
+			});
+
+			const del = item.createEl("button", { cls: "occ-picker-delete" });
+			setIcon(del, "trash-2");
+			del.setAttr("aria-label", "Delete session");
+			del.addEventListener("click", (e) => {
+				e.stopPropagation();
+				this.confirmDelete(s.sessionId, label);
 			});
 		}
+	}
+
+	private confirmDelete(sessionId: string, label: string): void {
+		new ConfirmModal(
+			this.app,
+			"Delete session",
+			`Permanently delete “${label}”? This removes the conversation from the server and can't be undone.`,
+			"Delete",
+			() => {
+				this.client.deleteSession(sessionId);
+				if (this.state.sessionId === sessionId) {
+					// We deleted the session we were viewing — reset the transcript.
+					this.pendingText = undefined;
+					this.state = { ...initialState(this.modelSelect.value), connection: this.state.connection };
+				}
+				this.refreshSessions();
+				this.render();
+			}
+		).open();
 	}
 
 	private openRename(sessionId: string, current: string): void {
@@ -387,6 +417,37 @@ class RenameModal extends Modal {
 		row.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
 		row.createEl("button", { text: "Save", cls: "mod-cta" }).addEventListener("click", submit);
 		input.focus();
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+}
+
+/** Confirm/cancel modal for a destructive action. */
+class ConfirmModal extends Modal {
+	constructor(
+		app: App,
+		private readonly heading: string,
+		private readonly body: string,
+		private readonly confirmText: string,
+		private readonly onConfirm: () => void
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.createEl("h3", { text: this.heading });
+		contentEl.createEl("p", { text: this.body });
+		const row = contentEl.createDiv({ cls: "occ-modal-buttons" });
+		row.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+		const confirm = row.createEl("button", { text: this.confirmText, cls: "mod-warning" });
+		confirm.addEventListener("click", () => {
+			this.onConfirm();
+			this.close();
+		});
 	}
 
 	onClose(): void {

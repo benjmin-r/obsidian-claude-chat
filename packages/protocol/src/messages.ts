@@ -211,6 +211,12 @@ export interface RenameSessionMessage {
 	title: string;
 }
 
+/** Permanently delete a session. */
+export interface DeleteSessionMessage {
+	type: "delete_session";
+	sessionId: string;
+}
+
 /** Request the current session list. */
 export interface ListSessionsMessage {
 	type: "list_sessions";
@@ -225,4 +231,5 @@ export type ClientMessage =
 	| NewSessionMessage
 	| ResumeSessionMessage
 	| RenameSessionMessage
+	| DeleteSessionMessage
 	| ListSessionsMessage;

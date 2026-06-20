@@ -1,9 +1,16 @@
 import type { BridgeEvent } from "@occ/protocol";
 import { SessionManager } from "../src/session-manager";
-import type { ListStored, LoadHistory, RenameStored } from "../src/ports";
+import type { DeleteStored, ListStored, LoadHistory, RenameStored } from "../src/ports";
 import { flush, makeFakeQuery } from "./fake-query";
 
-function makeManager(opts: { listStored?: ListStored; loadHistory?: LoadHistory; renameStored?: RenameStored } = {}) {
+function makeManager(
+	opts: {
+		listStored?: ListStored;
+		loadHistory?: LoadHistory;
+		renameStored?: RenameStored;
+		deleteStored?: DeleteStored;
+	} = {}
+) {
 	const fake = makeFakeQuery();
 	let n = 0;
 	const manager = new SessionManager(
@@ -14,6 +21,7 @@ function makeManager(opts: { listStored?: ListStored; loadHistory?: LoadHistory;
 			listStored: opts.listStored ?? (async () => []),
 			loadHistory: opts.loadHistory ?? (async () => []),
 			renameStored: opts.renameStored ?? (async () => undefined),
+			deleteStored: opts.deleteStored ?? (async () => undefined),
 		},
 		{ cwd: "/v", defaultModel: "claude-opus-4-8" }
 	);
@@ -109,5 +117,69 @@ describe("SessionManager", () => {
 		});
 		await manager.renameSession("sess-1", "New Title");
 		expect(calls).toEqual([["/v", "sess-1", "New Title"]]);
+	});
+
+	it("deleteSession removes it from the store and drops the live actor", async () => {
+		const deleted: string[] = [];
+		const { fake, manager } = makeManager({
+			deleteStored: async (_cwd, id) => {
+				deleted.push(id);
+			},
+		});
+		const actor = await manager.resumeWithHistory("sess-del"); // now active + indexed
+		actor.enqueue("hi");
+		await manager.deleteSession("sess-del");
+		expect(deleted).toEqual(["sess-del"]);
+		expect(manager.get("sess-del")).toBeUndefined(); // dropped from index
+		expect(manager.list()).toHaveLength(0); // dropped from the active set
+		expect(fake.interrupted()).toBe(true); // the running query was interrupted
+	});
+
+	it("deleteSession still drops the actor when the store delete fails (not persisted)", async () => {
+		const { manager } = makeManager({
+			deleteStored: async () => {
+				throw new Error("not found");
+			},
+		});
+		const actor = manager.create();
+		await manager.deleteSession(actor.id);
+		expect(manager.get(actor.id)).toBeUndefined();
+	});
+
+	it("deleteSession on a stored-only session (no live actor) just deletes the store entry", async () => {
+		const deleted: string[] = [];
+		const { manager } = makeManager({
+			deleteStored: async (_cwd, id) => {
+				deleted.push(id);
+			},
+		});
+		await manager.deleteSession("stored-only");
+		expect(deleted).toEqual(["stored-only"]);
+	});
+
+	it("deleteSession tolerates an interrupt failure", async () => {
+		const manager = new SessionManager(
+			{
+				runQuery: () => ({
+					async *[Symbol.asyncIterator]() {
+						/* immediately done */
+					},
+					interrupt: async () => {
+						throw new Error("boom");
+					},
+				}),
+				now: () => 1,
+				newHandleId: () => "h1",
+				listStored: async () => [],
+				loadHistory: async () => [],
+				renameStored: async () => undefined,
+				deleteStored: async () => undefined,
+			},
+			{ cwd: "/v", defaultModel: "m" }
+		);
+		const actor = manager.create();
+		actor.enqueue("hi"); // starts the query so a handle exists
+		await manager.deleteSession(actor.id);
+		expect(manager.get(actor.id)).toBeUndefined();
 	});
 });
