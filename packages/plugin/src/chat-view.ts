@@ -47,6 +47,7 @@ export class ChatView extends ItemView {
 	private sessionsLastOk = 0;
 	private sessionsRefreshTimer: number | undefined;
 	private inputEl!: HTMLTextAreaElement;
+	private sendBtn!: HTMLButtonElement;
 	private interruptBtn!: HTMLButtonElement;
 	/** tool blocks the user has expanded, kept across re-renders. */
 	private readonly expandedTools = new Set<string>();
@@ -176,8 +177,14 @@ export class ChatView extends ItemView {
 				this.sendCurrent();
 			}
 		});
-		const sendBtn = inputRow.createEl("button", { text: "Send", cls: "mod-cta" });
-		sendBtn.addEventListener("click", () => this.sendCurrent());
+		this.sendBtn = inputRow.createEl("button", { text: "Send", cls: "mod-cta" });
+		this.sendBtn.addEventListener("click", () => {
+			if (this.state.status === "working") {
+				if (this.state.sessionId) this.client.interrupt(this.state.sessionId);
+			} else {
+				this.sendCurrent();
+			}
+		});
 	}
 
 	private startNewSession(): void {
@@ -434,6 +441,11 @@ export class ChatView extends ItemView {
 		const working = this.state.status === "working";
 		this.interruptBtn.style.visibility = working ? "visible" : "hidden";
 		this.interruptBtn.disabled = !working;
+
+		// The Send button doubles as Stop while a turn is running.
+		this.sendBtn.setText(working ? "Stop" : "Send");
+		this.sendBtn.classList.toggle("mod-warning", working);
+		this.sendBtn.classList.toggle("mod-cta", !working);
 
 		this.modelLabelEl.setText(MODEL_OPTIONS[this.selectedModel] ?? this.selectedModel);
 	}
