@@ -6,6 +6,132 @@ Each entry is ≤200 words.
 
 ---
 
+## TDL-20260621-003: Keep the transcript pinned to the bottom reliably
+
+**Date:** 2026-06-21
+**Status:** Implemented
+**Context:** The view rebuilds all messages on every event, and assistant bubbles render markdown asynchronously, so "scroll to bottom" landed above the last (async-sized) message — most visibly when switching into a session.
+**Decision:** Treat "stick to bottom" as a persistent intent: force it true on new/resume/send; `render()` obeys the flag instead of re-deriving it. Only a genuine upward scroll (scrollTop decreasing) clears it; reaching the bottom re-sets it. A `ResizeObserver` on the message-content element plus timed re-pins (rAF/60ms/250ms) catch late layout growth.
+**Alternatives:**
+- Re-derive "follow" from `isNearBottom()` each render — rejected: carried the previous view's scroll position into the new session.
+- Re-scroll in MarkdownRenderer's `.then` — rejected: resolves before layout; unreliable.
+**Consequences:**
+- The actual killer (took 3 attempts): the scroll listener set `stickBottom = isNearBottom()`, so async growth briefly read "not at bottom" and disabled follow mid-load. Direction-aware un-pin fixed it.
+- A proper incremental renderer would remove most of this fragility (deferred).
+**Files:**
+- `packages/plugin/src/chat-view.ts`, `packages/plugin/styles.css`
+
+---
+
+## TDL-20260621-002: Lazy-load (page) resumed session history
+
+**Date:** 2026-06-21
+**Status:** Implemented
+**Context:** Resuming a long session replayed the whole transcript — slow and heavy on mobile.
+**Decision:** On resume, seed the actor's replay buffer with only the last page (~30 render events) and retain the older events server-side. Add a `load_older` request and a `history_page` event (`events` + `hasMore`); `session_status` carries `hasOlderHistory`. The plugin shows a "Load older messages" button, prepends fetched pages, and anchors scroll so the viewport doesn't jump.
+**Alternatives:**
+- Page at the SDK/message level with offsets — rejected: `getSessionMessages` returns the full array; paging our mapped render events is simpler and turn boundaries are close enough.
+- Infinite auto-load on scroll — deferred: an explicit button is simpler/predictable.
+**Consequences:**
+- The server holds older events in memory for the session's life (same order as before).
+- Prepend + async markdown can still shift slightly (shares the scroll-anchor caveat).
+**Files:**
+- `packages/protocol/src/messages.ts`, `packages/server/src/{session-actor,connection,ws-transport}.ts`, `packages/plugin/src/{view-model,chat-view,bridge-client}.ts`
+
+---
+
+## TDL-20260621-001: Transcript readability — copy, collapsible tools, scroll pill
+
+**Date:** 2026-06-21
+**Status:** Implemented
+**Context:** On a phone the transcript was hard to scan and copy: verbose tool output, no copy affordance, and force-scroll fighting manual scrolling.
+**Decision:** (1) A copy button per message bubble; rely on Obsidian's MarkdownRenderer for the native code-block copy button. (2) Tool calls render as a one-line, tappable header (name + input preview + error badge), collapsed by default, with expand state kept across re-renders. (3) When scrolled up, stop auto-scrolling and show a "Latest" pill that jumps to the bottom.
+**Alternatives:**
+- Add our own code-block copy button — rejected: Obsidian already adds one (duplicate buttons).
+- Always-expanded tool output — rejected: noisy.
+**Consequences:**
+- Expanded-tool state lives in a `Set<toolUseId>` on the view.
+**Files:**
+- `packages/plugin/src/chat-view.ts`, `packages/plugin/styles.css`
+
+---
+
+## TDL-20260620-006: Code blocks scroll within themselves; prose wraps
+
+**Date:** 2026-06-20
+**Status:** Implemented
+**Context:** Long lines/code in the narrow mobile sidebar produced horizontal scrollbars that scrolled the whole sidebar.
+**Decision:** Wrap prose and inline code, but keep code BLOCKS as `white-space: pre; overflow-x: auto` so they scroll horizontally within themselves; constrain the containers (`min-width: 0`, `max-width: 100%`, `overflow-x: hidden` on the chat) so a block's scroll never widens the sidebar.
+**Alternatives:**
+- Wrap code too — rejected: destroys code alignment/formatting.
+**Consequences:**
+- The flexbox `min-width: 0` on bubbles is load-bearing; without it the block expands the layout.
+**Files:**
+- `packages/plugin/styles.css`
+
+---
+
+## TDL-20260620-005: Stable single-row icon toolbar + model menu
+
+**Date:** 2026-06-20
+**Status:** Implemented
+**Context:** Text status badges reflowed and the toolbar wrapped to two lines on a small phone, with icons jumping as content changed.
+**Decision:** One non-wrapping row with fixed slots — New, session picker, model, then right-pinned status. Connection and activity become SVG state icons (tap → a legend overlay). The model picker is a compact button opening an Obsidian `Menu`. The stop button reserves its slot (visible only mid-turn) so nothing shifts.
+**Alternatives:**
+- Keep text badges and a `<select>` — rejected: reflow and wasted width.
+**Consequences:**
+- Mirroring is folded into the activity icon (`eye`); fixed slots mean a state change never moves other controls.
+**Files:**
+- `packages/plugin/src/chat-view.ts`, `packages/plugin/styles.css`
+
+---
+
+## TDL-20260620-004: Session rename & delete via SDK mutations
+
+**Date:** 2026-06-20
+**Status:** Implemented
+**Context:** Users need to retitle and remove sessions from the picker.
+**Decision:** Add `rename_session`/`delete_session` messages backed by the SDK's `renameSession`/`deleteSession`; both reply with a refreshed `sessions_list`. Delete is gated by a confirm modal (irreversible) and also drops any live in-memory actor — otherwise it would keep running against a deleted store file. Store deletion is best-effort (a brand-new session may not be persisted yet).
+**Alternatives:**
+- Delete only the store file — rejected: a resumed session's actor would outlive its store.
+**Consequences:**
+- New `RenameStored`/`DeleteStored` ports; the manager drops the actor and the connection detaches if it was viewing it.
+**Files:**
+- `packages/protocol/src/messages.ts`, `packages/server/src/{ports,sdk-adapter,session-manager,connection}.ts`, `packages/plugin/src/chat-view.ts`
+
+---
+
+## TDL-20260620-003: Show a resumed (active) session's stored title
+
+**Date:** 2026-06-20
+**Status:** Implemented
+**Context:** A `SessionActor` has no title of its own, so `listSummaries` listed active (resumed) sessions by UUID and filtered out the stored entry holding the renamed title — making a rename of an open session invisible (and it survived app quit because the actor stays alive).
+**Decision:** In `listSummaries`, enrich each active session with its stored title (look it up by id) before deduping against stored-only entries.
+**Alternatives:**
+- Give the actor a title field synced on rename — rejected: more state to keep consistent; the store is the source of truth.
+**Consequences:**
+- Resumed sessions also stop showing raw UUIDs in the picker.
+**Files:**
+- `packages/server/src/session-manager.ts`
+
+---
+
+## TDL-20260620-002: Session picker — resume with transcript replay
+
+**Date:** 2026-06-20
+**Status:** Implemented
+**Context:** The session-list button did nothing; users expected a `/resume`-style picker showing past sessions and their history.
+**Decision:** Enumerate persisted sessions with the SDK's `listSessions({ dir })`; on resume, load `getSessionMessages` and map them with a new pure `mapHistoryMessages` so the prior transcript repaints. History needs assistant text and the user's own turns, so the mapper includes assistant text (unlike live streaming, which gets it via deltas) and emits a new `user_echo` render event. The dropdown refetches live on every open, with loading/stale/offline status.
+**Alternatives:**
+- Parse the `.jsonl` store directly — rejected: the SDK functions are robust and version-safe.
+- Reuse the streaming mapper (skips assistant text) — rejected: history has no deltas, so text would be lost.
+**Consequences:**
+- `mapSdkEvent`'s assistant mapping gained an `includeText` flag.
+**Files:**
+- `packages/protocol/src/{messages,map-sdk-events}.ts`, `packages/server/src/{ports,sdk-adapter,session-manager}.ts`, `packages/plugin/src/{view-model,chat-view,bridge-client}.ts`
+
+---
+
 ## TDL-20260620-001: Connection-level logging in the WS transport
 
 **Date:** 2026-06-20
