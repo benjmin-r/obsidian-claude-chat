@@ -134,13 +134,16 @@
 	z-index: 5;
 }
 
-.occ-messages {
-	flex: 1;
-	overflow-y: auto;
+.occ-messages-inner {
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
 	padding: 4px;
+}
+
+.occ-messages {
+	flex: 1;
+	overflow-y: auto;
 }
 
 .occ-load-older {

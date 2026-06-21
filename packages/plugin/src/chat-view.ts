@@ -36,6 +36,8 @@ export class ChatView extends ItemView {
 	private modelLabelEl!: HTMLElement;
 	private selectedModel: string;
 	private messagesEl!: HTMLElement;
+	private messagesInnerEl!: HTMLElement;
+	private resizeObserver?: ResizeObserver;
 	private scrollPillEl!: HTMLElement;
 	private permissionEl!: HTMLElement;
 	private todosEl!: HTMLElement;
@@ -94,6 +96,7 @@ export class ChatView extends ItemView {
 
 	async onClose(): Promise<void> {
 		if (this.sessionsRefreshTimer !== undefined) window.clearTimeout(this.sessionsRefreshTimer);
+		this.resizeObserver?.disconnect();
 		this.client?.disconnect();
 	}
 
@@ -140,6 +143,7 @@ export class ChatView extends ItemView {
 
 		const messagesWrap = root.createDiv({ cls: "occ-messages-wrap" });
 		this.messagesEl = messagesWrap.createDiv({ cls: "occ-messages" });
+		this.messagesInnerEl = this.messagesEl.createDiv({ cls: "occ-messages-inner" });
 		this.scrollPillEl = messagesWrap.createDiv({ cls: "occ-scroll-pill" });
 		setIcon(this.scrollPillEl, "chevron-down");
 		this.scrollPillEl.createSpan({ text: "Latest" });
@@ -149,6 +153,12 @@ export class ChatView extends ItemView {
 			this.stickBottom = this.isNearBottom();
 			this.updateScrollPill();
 		});
+		// Re-pin to the bottom whenever content height changes (incl. async markdown).
+		this.resizeObserver = new ResizeObserver(() => {
+			if (this.stickBottom) this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+			this.updateScrollPill();
+		});
+		this.resizeObserver.observe(this.messagesInnerEl);
 
 		this.permissionEl = root.createDiv();
 
@@ -438,30 +448,27 @@ export class ChatView extends ItemView {
 	}
 
 	private renderMessages(): void {
-		this.messagesEl.empty();
+		this.messagesInnerEl.empty();
 		if (this.state.hasOlderHistory) {
-			const older = this.messagesEl.createEl("button", { cls: "occ-load-older", text: "↑ Load older messages" });
+			const older = this.messagesInnerEl.createEl("button", { cls: "occ-load-older", text: "↑ Load older messages" });
 			older.addEventListener("click", () => {
 				if (this.state.sessionId) this.client.loadOlder(this.state.sessionId);
 			});
 		}
 		for (const item of this.state.items) {
 			if (item.kind === "user") {
-				const bubble = this.messagesEl.createDiv({ cls: "occ-bubble occ-user" });
+				const bubble = this.messagesInnerEl.createDiv({ cls: "occ-bubble occ-user" });
 				bubble.createDiv({ text: item.text });
 				this.addMsgCopy(bubble, item.text);
 			} else if (item.kind === "assistant") {
-				const bubble = this.messagesEl.createDiv({ cls: "occ-bubble occ-assistant" });
+				const bubble = this.messagesInnerEl.createDiv({ cls: "occ-bubble occ-assistant" });
 				this.addMsgCopy(bubble, item.text);
 				const content = bubble.createDiv({ cls: "occ-bubble-content" });
-				// Obsidian's MarkdownRenderer already adds a native copy button to
-				// each code block, so we don't add our own there. It renders
-				// asynchronously, so re-pin to the bottom once it settles.
-				void MarkdownRenderer.render(this.app, item.text, content, "", this).then(() => {
-					if (this.stickBottom) this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
-				});
+				// Obsidian's MarkdownRenderer adds its own code-block copy button and
+				// renders asynchronously; the ResizeObserver re-pins us to the bottom.
+				void MarkdownRenderer.render(this.app, item.text, content, "", this);
 			} else if (item.kind === "thinking") {
-				this.messagesEl.createDiv({ cls: "occ-thinking", text: item.text });
+				this.messagesInnerEl.createDiv({ cls: "occ-thinking", text: item.text });
 			} else {
 				this.renderTool(item.entry);
 			}
@@ -496,7 +503,7 @@ export class ChatView extends ItemView {
 	private renderTool(entry: ToolEntry): void {
 		const expanded = this.expandedTools.has(entry.toolUseId);
 		const cls = entry.result?.isError ? "occ-tool occ-tool-error" : "occ-tool";
-		const el = this.messagesEl.createDiv({ cls });
+		const el = this.messagesInnerEl.createDiv({ cls });
 
 		// One-line, tappable summary.
 		const header = el.createDiv({ cls: "occ-tool-header" });
