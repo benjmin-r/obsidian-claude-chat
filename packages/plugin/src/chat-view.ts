@@ -177,6 +177,7 @@ export class ChatView extends ItemView {
 
 	private startNewSession(): void {
 		this.pickerOpen = false;
+		this.stickBottom = true;
 		this.state = { ...initialState(this.selectedModel), connection: this.state.connection };
 		this.client.newSession(this.selectedModel);
 		this.render();
@@ -209,6 +210,7 @@ export class ChatView extends ItemView {
 	private resumeSession(sessionId: string): void {
 		this.pickerOpen = false;
 		this.pendingText = undefined;
+		this.stickBottom = true; // switching in should always land at the bottom
 		// Clear the current transcript; the resumed session's history replays in.
 		this.state = { ...initialState(this.selectedModel), connection: this.state.connection };
 		this.client.resumeSession(sessionId);
@@ -219,6 +221,7 @@ export class ChatView extends ItemView {
 		const text = this.inputEl.value.trim();
 		if (!text) return;
 		this.inputEl.value = "";
+		this.stickBottom = true; // following our own new message
 		if (this.state.sessionId) {
 			this.client.userMessage(this.state.sessionId, text);
 			this.state = appendUserMessage(this.state, text);
@@ -266,9 +269,8 @@ export class ChatView extends ItemView {
 		this.renderStatus();
 		this.renderPicker();
 		this.renderTodos();
-		// Follow the stream only if the user is already at the bottom; otherwise
-		// preserve their scroll position (the full re-render would reset it).
-		const follow = this.isNearBottom();
+		// `stickBottom` is the persistent intent: only user scrolling turns it off.
+		// The full re-render resets scrollTop, so we re-apply it here.
 		const prevTop = this.messagesEl.scrollTop;
 		this.renderMessages();
 		this.renderPermission();
@@ -277,11 +279,23 @@ export class ChatView extends ItemView {
 			this.messagesEl.scrollTop = this.prependAdjust.prevTop + (this.messagesEl.scrollHeight - this.prependAdjust.prevHeight);
 			this.prependAdjust = undefined;
 			this.stickBottom = false;
+		} else if (this.stickBottom) {
+			this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+			this.pinToBottomSoon();
 		} else {
-			this.messagesEl.scrollTop = follow ? this.messagesEl.scrollHeight : prevTop;
-			this.stickBottom = follow;
+			this.messagesEl.scrollTop = prevTop;
 		}
 		this.updateScrollPill();
+	}
+
+	/** Re-pin to the bottom across the next few frames to catch late async layout. */
+	private pinToBottomSoon(): void {
+		const pin = (): void => {
+			if (this.stickBottom) this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+		};
+		requestAnimationFrame(pin);
+		window.setTimeout(pin, 60);
+		window.setTimeout(pin, 250);
 	}
 
 	private isNearBottom(): boolean {
