@@ -50,6 +50,8 @@ export class ChatView extends ItemView {
 	private readonly expandedTools = new Set<string>();
 	/** set when an older-history page was just prepended, to keep the viewport stable. */
 	private prependAdjust: { prevHeight: number; prevTop: number } | undefined;
+	/** true while we should keep pinned to the bottom (re-scroll as async markdown grows). */
+	private stickBottom = true;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -143,7 +145,10 @@ export class ChatView extends ItemView {
 		this.scrollPillEl.createSpan({ text: "Latest" });
 		this.scrollPillEl.style.display = "none";
 		this.scrollPillEl.addEventListener("click", () => this.scrollToBottom());
-		this.registerDomEvent(this.messagesEl, "scroll", () => this.updateScrollPill());
+		this.registerDomEvent(this.messagesEl, "scroll", () => {
+			this.stickBottom = this.isNearBottom();
+			this.updateScrollPill();
+		});
 
 		this.permissionEl = root.createDiv();
 
@@ -261,8 +266,10 @@ export class ChatView extends ItemView {
 			// Keep the previously-visible messages in place after prepending older ones.
 			this.messagesEl.scrollTop = this.prependAdjust.prevTop + (this.messagesEl.scrollHeight - this.prependAdjust.prevHeight);
 			this.prependAdjust = undefined;
+			this.stickBottom = false;
 		} else {
 			this.messagesEl.scrollTop = follow ? this.messagesEl.scrollHeight : prevTop;
+			this.stickBottom = follow;
 		}
 		this.updateScrollPill();
 	}
@@ -448,8 +455,11 @@ export class ChatView extends ItemView {
 				this.addMsgCopy(bubble, item.text);
 				const content = bubble.createDiv({ cls: "occ-bubble-content" });
 				// Obsidian's MarkdownRenderer already adds a native copy button to
-				// each code block, so we don't add our own there.
-				void MarkdownRenderer.render(this.app, item.text, content, "", this);
+				// each code block, so we don't add our own there. It renders
+				// asynchronously, so re-pin to the bottom once it settles.
+				void MarkdownRenderer.render(this.app, item.text, content, "", this).then(() => {
+					if (this.stickBottom) this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+				});
 			} else if (item.kind === "thinking") {
 				this.messagesEl.createDiv({ cls: "occ-thinking", text: item.text });
 			} else {
