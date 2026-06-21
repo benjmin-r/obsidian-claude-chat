@@ -129,6 +129,18 @@ export interface SessionStatusEvent {
 	cwd: string;
 	/** true if THIS client holds the single-writer role. */
 	isWriter: boolean;
+	/** true if older history exists beyond what was sent on attach. */
+	hasOlderHistory?: boolean;
+}
+
+/** A batch of older transcript events to PREPEND (reply to `load_older`). */
+export interface HistoryPageEvent {
+	type: "history_page";
+	sessionId: string;
+	/** older render events, oldest-first; prepend above the current transcript. */
+	events: RenderEvent[];
+	/** true if still-older history remains. */
+	hasMore: boolean;
 }
 
 /** Discriminated union of every server -> client frame. */
@@ -144,7 +156,8 @@ export type BridgeEvent =
 	| DoneEvent
 	| ErrorEvent
 	| SessionsListEvent
-	| SessionStatusEvent;
+	| SessionStatusEvent
+	| HistoryPageEvent;
 
 /** The subset of BridgeEvents that are derived purely from SDK stream messages. */
 export type RenderEvent =
@@ -217,6 +230,12 @@ export interface DeleteSessionMessage {
 	sessionId: string;
 }
 
+/** Request the next older page of a resumed session's transcript. */
+export interface LoadOlderMessage {
+	type: "load_older";
+	sessionId: string;
+}
+
 /** Request the current session list. */
 export interface ListSessionsMessage {
 	type: "list_sessions";
@@ -232,4 +251,5 @@ export type ClientMessage =
 	| ResumeSessionMessage
 	| RenameSessionMessage
 	| DeleteSessionMessage
+	| LoadOlderMessage
 	| ListSessionsMessage;

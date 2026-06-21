@@ -91,6 +91,12 @@ export class Connection {
 			case "delete_session":
 				this.onDelete(msg.sessionId);
 				return {};
+			case "load_older":
+				this.withActor(msg.sessionId, (actor) => {
+					const { events, hasMore } = actor.loadOlderPage();
+					this.deps.send({ type: "history_page", sessionId: actor.id, events, hasMore });
+				});
+				return {};
 			case "list_sessions":
 				this.deps.manager
 					.listSummaries()

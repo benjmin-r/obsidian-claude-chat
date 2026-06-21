@@ -8,6 +8,7 @@
 import type {
 	BridgeEvent,
 	PermissionRequestEvent,
+	RenderEvent,
 	SessionStatus,
 	SessionSummary,
 	TodoItem,
@@ -40,6 +41,8 @@ export interface ChatState {
 	todos: TodoItem[];
 	pendingPermission?: PermissionRequestEvent;
 	sessions: SessionSummary[];
+	/** true if older transcript exists beyond what's loaded (enables "load older"). */
+	hasOlderHistory: boolean;
 	error?: string;
 }
 
@@ -53,6 +56,7 @@ export function initialState(model: string): ChatState {
 		openKind: null,
 		todos: [],
 		sessions: [],
+		hasOlderHistory: false,
 	};
 }
 
@@ -113,9 +117,12 @@ export function applyEvent(state: ChatState, event: BridgeEvent): ChatState {
 				status: event.status,
 				model: event.model,
 				isWriter: event.isWriter,
+				hasOlderHistory: event.hasOlderHistory ?? state.hasOlderHistory,
 				// a resolved/expired request is implied once we're no longer awaiting.
 				pendingPermission: event.status === "awaiting_permission" ? state.pendingPermission : undefined,
 			};
+		case "history_page":
+			return prependHistory(state, event.events, event.hasMore);
 		case "sessions_list":
 			return { ...state, sessions: event.sessions };
 		default:
@@ -138,6 +145,12 @@ function applyToolResult(state: ChatState, toolUseId: string, content: string, i
 		openKind: null,
 		items: [...items, { kind: "tool", entry: { toolUseId, name: "(result)", input: undefined, result: { content, isError } } }],
 	};
+}
+
+/** Fold an older render-event batch into items and prepend them (oldest above). */
+export function prependHistory(state: ChatState, events: RenderEvent[], hasMore: boolean): ChatState {
+	const folded = events.reduce(applyEvent, initialState(state.model)).items;
+	return { ...state, items: [...folded, ...state.items], hasOlderHistory: hasMore };
 }
 
 /** Resolve a pending permission (after the client sends its decision). */

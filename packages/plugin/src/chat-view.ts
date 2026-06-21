@@ -48,6 +48,8 @@ export class ChatView extends ItemView {
 	private interruptBtn!: HTMLButtonElement;
 	/** tool blocks the user has expanded, kept across re-renders. */
 	private readonly expandedTools = new Set<string>();
+	/** set when an older-history page was just prepended, to keep the viewport stable. */
+	private prependAdjust: { prevHeight: number; prevTop: number } | undefined;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -216,6 +218,10 @@ export class ChatView extends ItemView {
 
 	private onEvent(event: BridgeEvent): void {
 		this.state = applyEvent(this.state, event);
+		if (event.type === "history_page") {
+			// Capture pre-prepend metrics so render() can keep the viewport stable.
+			this.prependAdjust = { prevHeight: this.messagesEl.scrollHeight, prevTop: this.messagesEl.scrollTop };
+		}
 		if (event.type === "sessions_list") {
 			this.sessionsLoading = false;
 			this.sessionsLastOk = Date.now();
@@ -251,7 +257,13 @@ export class ChatView extends ItemView {
 		const prevTop = this.messagesEl.scrollTop;
 		this.renderMessages();
 		this.renderPermission();
-		this.messagesEl.scrollTop = follow ? this.messagesEl.scrollHeight : prevTop;
+		if (this.prependAdjust) {
+			// Keep the previously-visible messages in place after prepending older ones.
+			this.messagesEl.scrollTop = this.prependAdjust.prevTop + (this.messagesEl.scrollHeight - this.prependAdjust.prevHeight);
+			this.prependAdjust = undefined;
+		} else {
+			this.messagesEl.scrollTop = follow ? this.messagesEl.scrollHeight : prevTop;
+		}
 		this.updateScrollPill();
 	}
 
@@ -420,6 +432,12 @@ export class ChatView extends ItemView {
 
 	private renderMessages(): void {
 		this.messagesEl.empty();
+		if (this.state.hasOlderHistory) {
+			const older = this.messagesEl.createEl("button", { cls: "occ-load-older", text: "↑ Load older messages" });
+			older.addEventListener("click", () => {
+				if (this.state.sessionId) this.client.loadOlder(this.state.sessionId);
+			});
+		}
 		for (const item of this.state.items) {
 			if (item.kind === "user") {
 				const bubble = this.messagesEl.createDiv({ cls: "occ-bubble occ-user" });

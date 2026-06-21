@@ -172,6 +172,28 @@ describe("SessionActor", () => {
 		expect(events.length).toBe(before);
 	});
 
+	it("seeds only the last page of history and pages older on demand", () => {
+		const { actor } = makeActor();
+		const events = Array.from({ length: 75 }, (_, i) => ({ type: "user_echo" as const, sessionId: "h1", text: `m${i}` }));
+		actor.seedHistory(events);
+		expect(actor.statusEvent().hasOlderHistory).toBe(true);
+
+		const replayed: BridgeEvent[] = [];
+		actor.subscribe((e) => replayed.push(e));
+		const echoed = replayed.filter((e) => e.type === "user_echo");
+		expect(echoed).toHaveLength(30); // last page only
+		expect(echoed[0]).toMatchObject({ text: "m45" }); // 75 - 30
+
+		const page1 = actor.loadOlderPage();
+		expect(page1.events).toHaveLength(30);
+		expect(page1.events.at(-1)).toMatchObject({ text: "m44" });
+		expect(page1.hasMore).toBe(true);
+
+		const page2 = actor.loadOlderPage();
+		expect(page2.events).toHaveLength(15);
+		expect(page2.hasMore).toBe(false);
+	});
+
 	it("summarises itself", () => {
 		const { actor } = makeActor();
 		actor.enqueue("hi");

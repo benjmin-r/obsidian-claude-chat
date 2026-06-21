@@ -13,6 +13,10 @@ describe("parseClientMessage", () => {
 			type: "delete_session",
 			sessionId: "s",
 		});
+		expect(parseClientMessage('{"type":"load_older","sessionId":"s"}')).toEqual({
+			type: "load_older",
+			sessionId: "s",
+		});
 	});
 
 	it("rejects non-JSON", () => {

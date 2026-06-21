@@ -200,6 +200,38 @@ describe("Connection session flow", () => {
 		expect(sent.some((e) => e.type === "sessions_list")).toBe(true);
 	});
 
+	it("pages older history on load_older", async () => {
+		const fake = makeFakeQuery();
+		let n = 0;
+		const many = Array.from({ length: 70 }, (_, i) => ({ type: "user" as const, message: { content: `m${i}` } }));
+		const manager = new SessionManager(
+			{
+				runQuery: fake.runQuery,
+				now: () => 1,
+				newHandleId: () => `h${(n += 1)}`,
+				listStored: async () => [],
+				loadHistory: async () => many,
+				renameStored: async () => undefined,
+				deleteStored: async () => undefined,
+			},
+			{ cwd: "/v", defaultModel: "m" }
+		);
+		const writers = createWriterRegistry();
+		const sent: BridgeEvent[] = [];
+		const conn = new Connection({ manager, token: "secret", writers, send: (e) => sent.push(e) });
+		conn.handle({ type: "hello", token: "secret" });
+		conn.handle({ type: "resume_session", sessionId: "sess-big" });
+		await flush();
+		await flush();
+		expect(sent.some((e) => e.type === "session_status" && e.hasOlderHistory)).toBe(true);
+
+		sent.length = 0;
+		conn.handle({ type: "load_older", sessionId: "sess-big" });
+		const page = sent.find((e) => e.type === "history_page");
+		expect(page && page.type === "history_page" && page.events.length).toBe(30); // 70 - 40 older; first page of 30
+		expect(page && page.type === "history_page" && page.hasMore).toBe(true);
+	});
+
 	it("enforces single-writer across mirrored clients and hands off on close", () => {
 		const { mkConn } = setup();
 		const a = mkConn();

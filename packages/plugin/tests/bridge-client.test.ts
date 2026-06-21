@@ -115,6 +115,9 @@ describe("BridgeClient", () => {
 		h.client.interrupt("s1");
 		h.client.listSessions();
 		h.client.resumeSession("s2");
+		h.client.renameSession("s1", "Title");
+		h.client.deleteSession("s1");
+		h.client.loadOlder("s1");
 		const frames = h.sentFrames();
 		expect(frames).toContainEqual({ type: "new_session", model: "claude-x" });
 		expect(frames).toContainEqual({ type: "user_message", sessionId: "s1", text: "hi" });
@@ -122,6 +125,9 @@ describe("BridgeClient", () => {
 		expect(frames).toContainEqual({ type: "interrupt", sessionId: "s1" });
 		expect(frames).toContainEqual({ type: "list_sessions" });
 		expect(frames).toContainEqual({ type: "resume_session", sessionId: "s2" });
+		expect(frames).toContainEqual({ type: "rename_session", sessionId: "s1", title: "Title" });
+		expect(frames).toContainEqual({ type: "delete_session", sessionId: "s1" });
+		expect(frames).toContainEqual({ type: "load_older", sessionId: "s1" });
 	});
 
 	it("reconnects with backoff after an unexpected close", () => {

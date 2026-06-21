@@ -95,6 +95,10 @@ export class BridgeClient {
 		this.send({ type: "delete_session", sessionId });
 	}
 
+	loadOlder(sessionId: string): void {
+		this.send({ type: "load_older", sessionId });
+	}
+
 	userMessage(sessionId: string, text: string): void {
 		this.send({ type: "user_message", sessionId, text });
 	}

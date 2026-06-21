@@ -53,6 +53,8 @@ export interface SessionActorOptions {
 type Listener = (event: BridgeEvent) => void;
 
 const DEFAULT_BUFFER_LIMIT = 2000;
+/** How many history events are shown initially / loaded per "load older" page. */
+const HISTORY_PAGE = 30;
 
 export class SessionActor {
 	private readonly input = new AsyncInputQueue<UserInputMessage>();
@@ -69,6 +71,8 @@ export class SessionActor {
 	private _messageCount = 0;
 	private pendingRequest: PermissionRequestEvent | undefined;
 	private permissionCounter = 0;
+	/** older history events not yet sent to clients (oldest-first), for paging. */
+	private olderHistory: RenderEvent[] = [];
 
 	constructor(
 		private readonly deps: SessionActorDeps,
@@ -159,14 +163,25 @@ export class SessionActor {
 	}
 
 	/**
-	 * Pre-fill the replay buffer with a resumed session's prior transcript, so
-	 * the first client to attach repaints the history. Call before any attach.
+	 * Pre-fill the replay buffer with a resumed session's prior transcript. Only
+	 * the most recent page is shown on attach; older events are retained for
+	 * on-demand paging via {@link loadOlderPage}. Call before any attach.
 	 */
 	seedHistory(events: RenderEvent[]): void {
-		for (const event of events) {
+		const split = Math.max(0, events.length - HISTORY_PAGE);
+		this.olderHistory = events.slice(0, split);
+		for (const event of events.slice(split)) {
 			this.buffer.push(event);
 			if (this.buffer.length > this.bufferLimit) this.buffer.shift();
 		}
+	}
+
+	/** Pop the next older page of history (most-recent older events first to prepend). */
+	loadOlderPage(): { events: RenderEvent[]; hasMore: boolean } {
+		const start = Math.max(0, this.olderHistory.length - HISTORY_PAGE);
+		const events = this.olderHistory.slice(start);
+		this.olderHistory = this.olderHistory.slice(0, start);
+		return { events, hasMore: this.olderHistory.length > 0 };
 	}
 
 	statusEvent(): SessionStatusEvent {
@@ -177,6 +192,7 @@ export class SessionActor {
 			model: this.opts.model,
 			cwd: this.opts.cwd,
 			isWriter: false, // the transport rewrites this per-connection.
+			hasOlderHistory: this.olderHistory.length > 0,
 		};
 	}
 

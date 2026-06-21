@@ -123,6 +123,38 @@ describe("view-model", () => {
 		expect(e.error).toBe("bad");
 	});
 
+	it("history_page prepends older messages (oldest above) and tracks hasMore", () => {
+		let s = reduce([{ type: "assistant_text_delta", sessionId: SID, text: "current" }]);
+		s = applyEvent(s, {
+			type: "history_page",
+			sessionId: SID,
+			events: [
+				{ type: "user_echo", sessionId: SID, text: "older q" },
+				{ type: "assistant_text_delta", sessionId: SID, text: "older a" },
+			],
+			hasMore: true,
+		});
+		expect(s.items).toEqual([
+			{ kind: "user", text: "older q" },
+			{ kind: "assistant", text: "older a" },
+			{ kind: "assistant", text: "current" },
+		]);
+		expect(s.hasOlderHistory).toBe(true);
+	});
+
+	it("session_status carries hasOlderHistory", () => {
+		const s = applyEvent(initialState("m"), {
+			type: "session_status",
+			sessionId: SID,
+			status: "idle",
+			model: "m",
+			cwd: "/v",
+			isWriter: true,
+			hasOlderHistory: true,
+		});
+		expect(s.hasOlderHistory).toBe(true);
+	});
+
 	it("sessions_list and setConnection / appendUserMessage helpers", () => {
 		const s = applyEvent(initialState("m"), {
 			type: "sessions_list",
