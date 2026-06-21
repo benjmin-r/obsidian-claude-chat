@@ -109,6 +109,31 @@
 	cursor: default;
 }
 
+.occ-messages-wrap {
+	position: relative;
+	flex: 1;
+	min-height: 0;
+	display: flex;
+}
+
+.occ-scroll-pill {
+	position: absolute;
+	left: 50%;
+	bottom: 10px;
+	transform: translateX(-50%);
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 12px;
+	border-radius: 14px;
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+	cursor: pointer;
+	font-size: 0.8em;
+	z-index: 5;
+}
+
 .occ-messages {
 	flex: 1;
 	overflow-y: auto;

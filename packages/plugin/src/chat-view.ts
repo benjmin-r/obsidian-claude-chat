@@ -36,6 +36,7 @@ export class ChatView extends ItemView {
 	private modelLabelEl!: HTMLElement;
 	private selectedModel: string;
 	private messagesEl!: HTMLElement;
+	private scrollPillEl!: HTMLElement;
 	private permissionEl!: HTMLElement;
 	private todosEl!: HTMLElement;
 	private pickerEl!: HTMLElement;
@@ -132,7 +133,16 @@ export class ChatView extends ItemView {
 		this.pickerEl = root.createDiv({ cls: "occ-picker" });
 		this.pickerEl.style.display = "none";
 		this.todosEl = root.createEl("ul", { cls: "occ-todos" });
-		this.messagesEl = root.createDiv({ cls: "occ-messages" });
+
+		const messagesWrap = root.createDiv({ cls: "occ-messages-wrap" });
+		this.messagesEl = messagesWrap.createDiv({ cls: "occ-messages" });
+		this.scrollPillEl = messagesWrap.createDiv({ cls: "occ-scroll-pill" });
+		setIcon(this.scrollPillEl, "chevron-down");
+		this.scrollPillEl.createSpan({ text: "Latest" });
+		this.scrollPillEl.style.display = "none";
+		this.scrollPillEl.addEventListener("click", () => this.scrollToBottom());
+		this.registerDomEvent(this.messagesEl, "scroll", () => this.updateScrollPill());
+
 		this.permissionEl = root.createDiv();
 
 		const inputRow = root.createDiv({ cls: "occ-input-row" });
@@ -235,9 +245,28 @@ export class ChatView extends ItemView {
 		this.renderStatus();
 		this.renderPicker();
 		this.renderTodos();
+		// Follow the stream only if the user is already at the bottom; otherwise
+		// preserve their scroll position (the full re-render would reset it).
+		const follow = this.isNearBottom();
+		const prevTop = this.messagesEl.scrollTop;
 		this.renderMessages();
 		this.renderPermission();
+		this.messagesEl.scrollTop = follow ? this.messagesEl.scrollHeight : prevTop;
+		this.updateScrollPill();
+	}
+
+	private isNearBottom(): boolean {
+		const el = this.messagesEl;
+		return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+	}
+
+	private scrollToBottom(): void {
 		this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+		this.updateScrollPill();
+	}
+
+	private updateScrollPill(): void {
+		this.scrollPillEl.style.display = this.isNearBottom() ? "none" : "";
 	}
 
 	private renderPicker(): void {
