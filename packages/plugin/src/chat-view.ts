@@ -54,6 +54,7 @@ export class ChatView extends ItemView {
 	private prependAdjust: { prevHeight: number; prevTop: number } | undefined;
 	/** true while we should keep pinned to the bottom (re-scroll as async markdown grows). */
 	private stickBottom = true;
+	private lastScrollTop = 0;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -150,7 +151,11 @@ export class ChatView extends ItemView {
 		this.scrollPillEl.style.display = "none";
 		this.scrollPillEl.addEventListener("click", () => this.scrollToBottom());
 		this.registerDomEvent(this.messagesEl, "scroll", () => {
-			this.stickBottom = this.isNearBottom();
+			const top = this.messagesEl.scrollTop;
+			// Only a genuine upward scroll un-pins; content growing below must not.
+			if (this.isNearBottom()) this.stickBottom = true;
+			else if (top < this.lastScrollTop - 2) this.stickBottom = false;
+			this.lastScrollTop = top;
 			this.updateScrollPill();
 		});
 		// Re-pin to the bottom whenever content height changes (incl. async markdown).
