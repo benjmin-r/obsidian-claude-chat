@@ -105,6 +105,8 @@ export interface DoneEvent {
 	sessionId: string;
 	subtype: string;
 	isError: boolean;
+	/** cumulative session cost in USD, if the SDK reported it. */
+	costUsd?: number;
 }
 
 /** An error surfaced to the client. */

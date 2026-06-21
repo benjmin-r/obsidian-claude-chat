@@ -256,17 +256,61 @@
 }
 
 .occ-permission {
-	border: 1px solid var(--text-error);
+	border: 2px solid var(--text-error);
 	border-radius: 8px;
-	padding: 8px;
+	padding: 10px;
+	margin: 4px 0;
+	background-color: var(--background-secondary);
 	display: flex;
 	flex-direction: column;
+	gap: 8px;
+	animation: occ-attn 1s ease-in-out 3;
+}
+
+@keyframes occ-attn {
+	50% {
+		box-shadow: 0 0 0 3px var(--text-error);
+	}
+}
+
+.occ-permission-head {
+	display: flex;
+	align-items: center;
 	gap: 6px;
+	font-weight: var(--font-bold, 700);
+}
+.occ-permission-icon {
+	display: inline-flex;
+	color: var(--text-error);
+}
+.occ-permission-input {
+	margin: 0;
+	max-height: 30vh;
+	overflow: auto;
 }
 
 .occ-permission-buttons {
 	display: flex;
 	gap: 8px;
+}
+.occ-permission-buttons button {
+	flex: 1;
+	padding: 8px;
+}
+
+.occ-cost {
+	font-size: 0.75em;
+	color: var(--text-muted);
+	white-space: nowrap;
+}
+
+.occ-empty {
+	margin: auto;
+	max-width: 28ch;
+	text-align: center;
+	color: var(--text-muted);
+	font-size: 0.9em;
+	padding: 16px;
 }
 
 .occ-cursor::after {

@@ -9,6 +9,14 @@ export const VIEW_TYPE_CLAUDE_CHAT = "claude-chat-view";
 
 /** After this long without a successful refresh, the session list is flagged stale. */
 const STALE_AFTER_MS = 60_000;
+/** localStorage key for the unsent input draft (survives view reloads). */
+const DRAFT_KEY = "occ-chat-draft";
+
+/** Human-friendly text for a permission request's input (the bash command, or JSON). */
+function permissionInputText(input: unknown): string {
+	const cmd = (input as { command?: unknown })?.command;
+	return typeof cmd === "string" ? cmd : JSON.stringify(input, null, 2);
+}
 
 function relativeTime(ms: number): string {
 	const s = Math.round(ms / 1000);
@@ -33,6 +41,7 @@ export class ChatView extends ItemView {
 
 	private connIconEl!: HTMLElement;
 	private activityIconEl!: HTMLElement;
+	private costEl!: HTMLElement;
 	private modelLabelEl!: HTMLElement;
 	private selectedModel: string;
 	private messagesEl!: HTMLElement;
@@ -126,8 +135,9 @@ export class ChatView extends ItemView {
 		modelBtn.setAttr("aria-label", "Choose the model for new sessions");
 		modelBtn.addEventListener("click", (e) => this.openModelMenu(e));
 
-		// Right-aligned status group: stop (only mid-turn), connection, activity.
+		// Right-aligned status group: cost, stop (only mid-turn), connection, activity.
 		const status = toolbar.createDiv({ cls: "occ-status" });
+		this.costEl = status.createSpan({ cls: "occ-cost" });
 		this.interruptBtn = status.createEl("button", { cls: "occ-tool-btn occ-stop" });
 		setIcon(this.interruptBtn, "square");
 		this.interruptBtn.setAttr("aria-label", "Stop the current turn");
@@ -171,6 +181,9 @@ export class ChatView extends ItemView {
 		const inputRow = root.createDiv({ cls: "occ-input-row" });
 		this.inputEl = inputRow.createEl("textarea");
 		this.inputEl.placeholder = "Message Claude…";
+		// Restore + persist the unsent draft across view reloads.
+		this.inputEl.value = window.localStorage.getItem(DRAFT_KEY) ?? "";
+		this.inputEl.addEventListener("input", () => window.localStorage.setItem(DRAFT_KEY, this.inputEl.value));
 		this.inputEl.addEventListener("keydown", (e) => {
 			if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
@@ -233,6 +246,7 @@ export class ChatView extends ItemView {
 		const text = this.inputEl.value.trim();
 		if (!text) return;
 		this.inputEl.value = "";
+		window.localStorage.removeItem(DRAFT_KEY);
 		this.stickBottom = true; // following our own new message
 		if (this.state.sessionId) {
 			this.client.userMessage(this.state.sessionId, text);
@@ -265,6 +279,9 @@ export class ChatView extends ItemView {
 			this.pendingText = undefined;
 		}
 		if (event.type === "error") new Notice(`Claude: ${event.message}`, 5000);
+		if (event.type === "permission_request") new Notice(`Claude needs permission: ${event.name}`, 6000);
+		// Alert when a turn finishes while the app isn't visible.
+		if (event.type === "done" && document.hidden) new Notice("Claude finished responding", 5000);
 		this.render();
 	}
 
@@ -447,6 +464,8 @@ export class ChatView extends ItemView {
 		this.sendBtn.classList.toggle("mod-warning", working);
 		this.sendBtn.classList.toggle("mod-cta", !working);
 
+		this.costEl.setText(typeof this.state.costUsd === "number" ? `$${this.state.costUsd.toFixed(2)}` : "");
+
 		this.modelLabelEl.setText(MODEL_OPTIONS[this.selectedModel] ?? this.selectedModel);
 	}
 
@@ -503,6 +522,12 @@ export class ChatView extends ItemView {
 			} else {
 				this.renderTool(item.entry);
 			}
+		}
+		if (this.state.items.length === 0) {
+			this.messagesInnerEl.createDiv({
+				cls: "occ-empty",
+				text: "Start chatting — type a message below, or tap the list icon to resume a past session.",
+			});
 		}
 	}
 
@@ -568,13 +593,15 @@ export class ChatView extends ItemView {
 		const req = this.state.pendingPermission;
 		if (!req) return;
 		const box = this.permissionEl.createDiv({ cls: "occ-permission" });
-		box.createDiv({ text: `Allow destructive tool ${req.name}?` });
-		box.createEl("pre", { text: JSON.stringify(req.input, null, 2) });
+		const head = box.createDiv({ cls: "occ-permission-head" });
+		setIcon(head.createSpan({ cls: "occ-permission-icon" }), "alert-triangle");
+		head.createSpan({ text: `Allow ${req.name}?` });
+		box.createEl("pre", { cls: "occ-permission-input", text: permissionInputText(req.input) });
 		const buttons = box.createDiv({ cls: "occ-permission-buttons" });
-		const allow = buttons.createEl("button", { text: "Allow", cls: "mod-warning" });
-		allow.addEventListener("click", () => this.decide(req.toolUseId, true));
 		const deny = buttons.createEl("button", { text: "Deny", cls: "mod-cta" });
 		deny.addEventListener("click", () => this.decide(req.toolUseId, false));
+		const allow = buttons.createEl("button", { text: "Allow", cls: "mod-warning" });
+		allow.addEventListener("click", () => this.decide(req.toolUseId, true));
 	}
 }
 

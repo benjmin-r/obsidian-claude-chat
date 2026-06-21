@@ -95,6 +95,9 @@ describe("mapSdkEvent", () => {
 		expect(mapSdkEvent({ type: "result", subtype: "error_max_turns", is_error: true }, SID)).toEqual([
 			{ type: "done", sessionId: SID, subtype: "error_max_turns", isError: true },
 		]);
+		expect(mapSdkEvent({ type: "result", subtype: "success", is_error: false, total_cost_usd: 0.042 }, SID)).toEqual([
+			{ type: "done", sessionId: SID, subtype: "success", isError: false, costUsd: 0.042 },
+		]);
 	});
 
 	it("prefers the session id carried on the message", () => {

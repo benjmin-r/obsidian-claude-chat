@@ -43,6 +43,8 @@ export interface ChatState {
 	sessions: SessionSummary[];
 	/** true if older transcript exists beyond what's loaded (enables "load older"). */
 	hasOlderHistory: boolean;
+	/** cumulative session cost in USD, if known. */
+	costUsd?: number;
 	error?: string;
 }
 
@@ -107,7 +109,7 @@ export function applyEvent(state: ChatState, event: BridgeEvent): ChatState {
 		case "permission_request":
 			return { ...state, pendingPermission: event };
 		case "done":
-			return { ...state, openKind: null };
+			return { ...state, openKind: null, costUsd: event.costUsd ?? state.costUsd };
 		case "error":
 			return { ...state, openKind: null, error: event.message };
 		case "session_status":

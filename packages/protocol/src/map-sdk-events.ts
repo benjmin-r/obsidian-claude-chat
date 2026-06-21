@@ -40,15 +40,18 @@ export function mapSdkEvent(msg: SdkMessage, sessionId: string): RenderEvent[] {
 			return mapAssistant((msg as { message?: { content?: unknown } }).message, sid);
 		case "user":
 			return mapUserResult((msg as { message?: { content?: unknown } }).message, sid);
-		case "result":
+		case "result": {
+			const cost = (msg as { total_cost_usd?: unknown }).total_cost_usd;
 			return [
 				{
 					type: "done",
 					sessionId: sid,
 					subtype: String((msg as { subtype?: unknown }).subtype ?? "success"),
 					isError: Boolean((msg as { is_error?: unknown }).is_error),
+					...(typeof cost === "number" ? { costUsd: cost } : {}),
 				},
 			];
+		}
 		default:
 			// system/init and any unknown message types carry no render payload.
 			return [];

@@ -155,6 +155,17 @@ describe("view-model", () => {
 		expect(s.hasOlderHistory).toBe(true);
 	});
 
+	it("done records the session cost when present", () => {
+		const s = applyEvent(initialState("m"), {
+			type: "done",
+			sessionId: SID,
+			subtype: "success",
+			isError: false,
+			costUsd: 0.05,
+		});
+		expect(s.costUsd).toBe(0.05);
+	});
+
 	it("sessions_list and setConnection / appendUserMessage helpers", () => {
 		const s = applyEvent(initialState("m"), {
 			type: "sessions_list",
