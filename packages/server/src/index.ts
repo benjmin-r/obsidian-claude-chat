@@ -41,6 +41,11 @@ function main(): void {
 	const poll = setInterval(() => manager.pollExternalActivity(), 3000);
 	poll.unref();
 
+	// Release idle, detached sessions after 5 min so we stop being a writer the
+	// user's own CLI would conflict with (and free the subprocess).
+	const reaper = setInterval(() => manager.reapIdle(5 * 60_000), 60_000);
+	reaper.unref();
+
 	// eslint-disable-next-line no-console
 	console.log(`[occ] listening on ws://${config.host}:${config.port} (cwd=${config.vaultCwd}, model=${config.defaultModel})`);
 

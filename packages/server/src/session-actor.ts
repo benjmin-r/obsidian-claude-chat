@@ -61,6 +61,8 @@ const HISTORY_PAGE = 30;
 export class SessionActor {
 	private readonly input = new AsyncInputQueue<UserInputMessage>();
 	private readonly listeners = new Set<Listener>();
+	/** count of CLIENT subscribers (excludes the manager's internal aliasing listener). */
+	private _clientListeners = 0;
 	private readonly buffer: RenderEvent[] = [];
 	private readonly pendingPermissions = new Map<string, (r: PermissionResult) => void>();
 	private readonly bufferLimit: number;
@@ -121,6 +123,16 @@ export class SessionActor {
 
 	get listenerCount(): number {
 		return this.listeners.size;
+	}
+
+	/** Number of attached CLIENTS (for idle-reaping / poll gating). */
+	get clientListenerCount(): number {
+		return this._clientListeners;
+	}
+
+	/** Epoch ms of the last activity (status change / turn), for idle-reaping. */
+	get updatedAt(): number {
+		return this._updatedAt;
 	}
 
 	get model(): string {
@@ -222,7 +234,7 @@ export class SessionActor {
 	 * Sends a fresh status and re-surfaces any still-pending permission request.
 	 * @returns an unsubscribe function.
 	 */
-	subscribe(listener: Listener): () => void {
+	subscribe(listener: Listener, opts?: { internal?: boolean }): () => void {
 		for (const event of this.buffer) listener(event);
 		listener(this.statusEvent());
 		if (this.pendingRequest) listener(this.pendingRequest);
@@ -238,7 +250,11 @@ export class SessionActor {
 		}
 		if (this._stale) listener({ type: "session_stale", sessionId: this.id, stale: true });
 		this.listeners.add(listener);
-		return () => this.listeners.delete(listener);
+		if (!opts?.internal) this._clientListeners += 1;
+		return () => {
+			this.listeners.delete(listener);
+			if (!opts?.internal) this._clientListeners = Math.max(0, this._clientListeners - 1);
+		};
 	}
 
 	/**

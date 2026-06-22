@@ -18,6 +18,7 @@ function makeManager(
 		deleteStored?: DeleteStored;
 		detectExternalActivity?: DetectExternalActivity;
 		sessionLastModified?: SessionLastModified;
+		now?: () => number;
 	} = {}
 ) {
 	const fake = makeFakeQuery();
@@ -25,7 +26,7 @@ function makeManager(
 	const manager = new SessionManager(
 		{
 			runQuery: fake.runQuery,
-			now: () => 7,
+			now: opts.now ?? (() => 7),
 			newHandleId: () => `h${(n += 1)}`,
 			listStored: opts.listStored ?? (async () => []),
 			loadHistory: opts.loadHistory ?? (async () => []),
@@ -94,6 +95,30 @@ describe("SessionManager", () => {
 		const actor = manager.create(); // no listeners, no sdk id
 		manager.pollExternalActivity();
 		expect(actor.externalActivity.severity).toBe("none");
+	});
+
+	it("reapIdle releases only idle, detached, stale actors", () => {
+		let now = 0;
+		const { manager } = makeManager({ now: () => now });
+		const idleDetached = manager.create(); // idle, no client listener
+		const attached = manager.create();
+		attached.subscribe(() => undefined); // a client listener keeps it alive
+		const working = manager.create();
+		working.enqueue("hi"); // status → working
+		now = 10 * 60_000; // advance past 5 min
+		manager.reapIdle(5 * 60_000);
+		expect(manager.get(idleDetached.handleId)).toBeUndefined(); // reaped
+		expect(manager.get(attached.handleId)).toBe(attached); // kept (has a client)
+		expect(manager.get(working.handleId)).toBe(working); // kept (working)
+	});
+
+	it("reapIdle keeps actors that are not yet stale", () => {
+		let now = 0;
+		const { manager } = makeManager({ now: () => now });
+		const a = manager.create();
+		now = 60_000; // only 1 min
+		manager.reapIdle(5 * 60_000);
+		expect(manager.get(a.handleId)).toBe(a);
 	});
 
 	it("reloadSession drops the cached actor and reconstructs it fresh from disk", async () => {

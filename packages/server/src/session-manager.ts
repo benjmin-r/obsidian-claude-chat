@@ -46,6 +46,8 @@ export interface SessionManagerDeps extends SessionActorDeps {
 export class SessionManager {
 	private readonly index = new Map<string, SessionActor>();
 	private readonly actors = new Set<SessionActor>();
+	/** unsubscribe for each actor's internal id-aliasing listener (cleared on drop). */
+	private readonly aliasUnsub = new Map<SessionActor, () => void>();
 
 	private readonly detect: DetectExternalActivity;
 	private readonly lastModified: SessionLastModified;
@@ -63,9 +65,19 @@ export class SessionManager {
 	pollExternalActivity(): void {
 		for (const actor of this.actors) {
 			const sid = actor.sdkSessionId;
-			if (!sid || actor.listenerCount === 0) continue;
+			if (!sid || actor.clientListenerCount === 0) continue;
 			actor.setExternalActivity(this.detect(this.config.cwd, sid));
 			void this.refreshStale(actor, sid);
+		}
+	}
+
+	/** Release actors idle longer than maxIdleMs with no attached clients. */
+	reapIdle(maxIdleMs: number): void {
+		const now = this.deps.now();
+		for (const actor of [...this.actors]) {
+			if (actor.status === "idle" && actor.clientListenerCount === 0 && now - actor.updatedAt > maxIdleMs) {
+				this.dropActor(actor);
+			}
 		}
 	}
 
@@ -130,18 +142,21 @@ export class SessionManager {
 	 */
 	async reloadSession(sessionId: string): Promise<SessionActor> {
 		const existing = this.index.get(sessionId);
-		if (existing) {
-			try {
-				await existing.interrupt();
-			} catch {
-				// ignore interrupt failures
-			}
-			this.actors.delete(existing);
-			for (const [id, a] of [...this.index]) {
-				if (a === existing) this.index.delete(id);
-			}
-		}
+		if (existing) this.dropActor(existing);
 		return this.resumeWithHistory(sessionId);
+	}
+
+	/** Interrupt (best-effort) and remove an actor plus all its id aliases. */
+	private dropActor(actor: SessionActor): void {
+		// Stop the aliasing listener FIRST, so the interrupt's status broadcast can't
+		// re-insert the actor we're about to remove.
+		this.aliasUnsub.get(actor)?.();
+		this.aliasUnsub.delete(actor);
+		void actor.interrupt().catch(() => undefined);
+		this.actors.delete(actor);
+		for (const [id, a] of [...this.index]) {
+			if (a === actor) this.index.delete(id);
+		}
 	}
 
 	/** Resume a session by id, seeding its replay buffer with the stored transcript. */
@@ -185,17 +200,7 @@ export class SessionManager {
 		} catch {
 			// not persisted yet (or already gone); still drop the actor below.
 		}
-		if (actor) {
-			try {
-				await actor.interrupt();
-			} catch {
-				// ignore interrupt failures.
-			}
-			this.actors.delete(actor);
-			for (const [id, a] of [...this.index]) {
-				if (a === actor) this.index.delete(id);
-			}
-		}
+		if (actor) this.dropActor(actor);
 	}
 
 	get(id: string): SessionActor | undefined {
@@ -243,9 +248,14 @@ export class SessionManager {
 		this.actors.add(actor);
 		this.index.set(id, actor);
 		// Learn the canonical SDK id as soon as it is reported, and alias it.
-		actor.subscribe(() => {
-			const sid = actor.sdkSessionId;
-			if (sid && this.index.get(sid) !== actor) this.index.set(sid, actor);
-		});
+		// Internal: must not count as a client listener (idle-reaping depends on that).
+		const off = actor.subscribe(
+			() => {
+				const sid = actor.sdkSessionId;
+				if (sid && this.index.get(sid) !== actor) this.index.set(sid, actor);
+			},
+			{ internal: true }
+		);
+		this.aliasUnsub.set(actor, off);
 	}
 }
