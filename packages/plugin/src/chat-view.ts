@@ -260,15 +260,15 @@ export class ChatView extends ItemView {
 		}, 5000);
 	}
 
-	private resumeSession(sessionId: string, title?: string): void {
+	private resumeSession(sessionId: string, title?: string, reload = false): void {
 		this.pickerOpen = false;
 		this.pendingText = undefined;
 		this.stickBottom = true; // switching in should always land at the bottom
-		this.currentTitle = title;
+		this.currentTitle = reload ? this.currentTitle : title;
 		this.updateTabTitle();
 		// Clear the current transcript; the resumed session's history replays in.
 		this.state = { ...initialState(this.selectedModel), connection: this.state.connection };
-		this.client.resumeSession(sessionId);
+		this.client.resumeSession(sessionId, reload);
 		this.render();
 	}
 
@@ -752,6 +752,11 @@ export class ChatView extends ItemView {
 			box.addClass("occ-activity-stale");
 			setIcon(head.createSpan({ cls: "occ-activity-icon" }), "refresh-cw");
 			head.createSpan({ text: "Newer messages were added elsewhere." });
+			const buttons = box.createDiv({ cls: "occ-activity-buttons" });
+			const reload = buttons.createEl("button", { text: "Reload", cls: "mod-cta" });
+			reload.addEventListener("click", () => {
+				if (this.state.sessionId) this.resumeSession(this.state.sessionId, this.currentTitle, true);
+			});
 			return;
 		}
 

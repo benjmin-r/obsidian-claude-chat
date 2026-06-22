@@ -83,7 +83,7 @@ export class Connection {
 				this.onNewSession(msg.model);
 				return {};
 			case "resume_session":
-				this.onResume(msg.sessionId);
+				this.onResume(msg.sessionId, msg.reload ?? false);
 				return {};
 			case "rename_session":
 				this.onRename(msg.sessionId, msg.title);
@@ -175,9 +175,11 @@ export class Connection {
 		this.attach(actor); // attach AFTER claiming so the first status reports isWriter:true
 	}
 
-	private onResume(sessionId: string): void {
-		this.deps.manager
-			.resumeWithHistory(sessionId)
+	private onResume(sessionId: string, reload: boolean): void {
+		const resumed = reload
+			? this.deps.manager.reloadSession(sessionId)
+			: this.deps.manager.resumeWithHistory(sessionId);
+		resumed
 			.then((actor) => this.attach(actor))
 			.catch((err: unknown) => {
 				const message = err instanceof Error ? err.message : String(err);

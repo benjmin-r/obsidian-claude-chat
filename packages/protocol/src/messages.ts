@@ -263,6 +263,8 @@ export interface NewSessionMessage {
 export interface ResumeSessionMessage {
 	type: "resume_session";
 	sessionId: string;
+	/** drop any cached (possibly stale) actor and reconstruct fresh from disk. */
+	reload?: boolean;
 }
 
 /** Set a session's display title. */

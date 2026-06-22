@@ -82,9 +82,9 @@ export class BridgeClient {
 		this.send({ type: "new_session", model });
 	}
 
-	resumeSession(sessionId: string): void {
+	resumeSession(sessionId: string, reload = false): void {
 		this.attachTarget = sessionId;
-		this.send({ type: "resume_session", sessionId });
+		this.send({ type: "resume_session", sessionId, ...(reload ? { reload: true } : {}) });
 	}
 
 	renameSession(sessionId: string, title: string): void {

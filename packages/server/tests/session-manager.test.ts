@@ -96,6 +96,22 @@ describe("SessionManager", () => {
 		expect(actor.externalActivity.severity).toBe("none");
 	});
 
+	it("reloadSession drops the cached actor and reconstructs it fresh from disk", async () => {
+		let loads = 0;
+		const { manager } = makeManager({
+			loadHistory: async () => {
+				loads += 1;
+				return [];
+			},
+		});
+		const first = await manager.resumeWithHistory("sess-1");
+		expect(loads).toBe(1);
+		const reloaded = await manager.reloadSession("sess-1");
+		expect(loads).toBe(2); // re-read disk
+		expect(reloaded).not.toBe(first); // a fresh actor instance
+		expect(manager.get("sess-1")).toBe(reloaded);
+	});
+
 	it("listSummaries merges active + stored, dedupes, sorts newest first", async () => {
 		const { manager } = makeManager({
 			listStored: async () => [

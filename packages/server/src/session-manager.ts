@@ -122,6 +122,28 @@ export class SessionManager {
 		return actor;
 	}
 
+	/**
+	 * Drop any cached (possibly stale) actor for `id` and reconstruct it fresh from
+	 * disk. Used to reconcile after the on-disk transcript advanced externally.
+	 * NOTE: other clients attached to the old actor are orphaned until they
+	 * re-interact (single-writer is the norm; concurrent multi-client is rare).
+	 */
+	async reloadSession(sessionId: string): Promise<SessionActor> {
+		const existing = this.index.get(sessionId);
+		if (existing) {
+			try {
+				await existing.interrupt();
+			} catch {
+				// ignore interrupt failures
+			}
+			this.actors.delete(existing);
+			for (const [id, a] of [...this.index]) {
+				if (a === existing) this.index.delete(id);
+			}
+		}
+		return this.resumeWithHistory(sessionId);
+	}
+
 	/** Resume a session by id, seeding its replay buffer with the stored transcript. */
 	async resumeWithHistory(sessionId: string): Promise<SessionActor> {
 		const existing = this.index.get(sessionId);
