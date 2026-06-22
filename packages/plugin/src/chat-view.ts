@@ -390,30 +390,27 @@ export class ChatView extends ItemView {
 			main.addEventListener("click", () => this.resumeSession(s.sessionId));
 
 			const label = named || `New session — started ${startedAgo}`;
-			const resumeCmd = item.createEl("button", { cls: "occ-picker-resume-cmd" });
-			setIcon(resumeCmd, "terminal");
-			resumeCmd.setAttr("aria-label", "Copy shell resume command");
-			resumeCmd.addEventListener("click", (e) => {
+			const more = item.createEl("button", { cls: "occ-picker-more" });
+			setIcon(more, "more-vertical");
+			more.setAttr("aria-label", "Session actions");
+			more.addEventListener("click", (e) => {
 				e.stopPropagation();
-				this.copyToClipboard(`claude --resume ${s.sessionId}`);
-			});
-
-			const rename = item.createEl("button", { cls: "occ-picker-rename" });
-			setIcon(rename, "pencil");
-			rename.setAttr("aria-label", "Rename session");
-			rename.addEventListener("click", (e) => {
-				e.stopPropagation();
-				this.openRename(s.sessionId, named || "");
-			});
-
-			const del = item.createEl("button", { cls: "occ-picker-delete" });
-			setIcon(del, "trash-2");
-			del.setAttr("aria-label", "Delete session");
-			del.addEventListener("click", (e) => {
-				e.stopPropagation();
-				this.confirmDelete(s.sessionId, label);
+				this.openSessionActions(e, s.sessionId, named || "", label);
 			});
 		}
+	}
+
+	private openSessionActions(evt: MouseEvent, sessionId: string, currentTitle: string, label: string): void {
+		const menu = new Menu();
+		menu.addItem((i) =>
+			i
+				.setTitle("Copy shell resume command")
+				.setIcon("terminal")
+				.onClick(() => this.copyToClipboard(`claude --resume ${sessionId}`))
+		);
+		menu.addItem((i) => i.setTitle("Rename…").setIcon("pencil").onClick(() => this.openRename(sessionId, currentTitle)));
+		menu.addItem((i) => i.setTitle("Delete…").setIcon("trash-2").onClick(() => this.confirmDelete(sessionId, label)));
+		menu.showAtMouseEvent(evt);
 	}
 
 	private confirmDelete(sessionId: string, label: string): void {

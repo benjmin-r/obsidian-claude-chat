@@ -418,18 +418,15 @@
 	cursor: pointer;
 }
 
-.occ-picker-rename,
-.occ-picker-delete,
-.occ-picker-resume-cmd {
+.occ-picker-more {
 	flex: 0 0 auto;
-	padding: 4px 6px;
+	padding: 2px 4px;
 	background: none;
 	box-shadow: none;
 }
-
-.occ-picker-delete:hover,
-.occ-picker-delete:active {
-	color: var(--text-error);
+.occ-picker-more svg {
+	width: 16px;
+	height: 16px;
 }
 
 .occ-modal-buttons {
