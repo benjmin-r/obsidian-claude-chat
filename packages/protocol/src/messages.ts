@@ -14,12 +14,13 @@ export const PROTOCOL_VERSION = 1;
 export type SessionStatus = "idle" | "working" | "awaiting_permission";
 
 /**
- * Agent permission modes we expose. Limited to the modes that are safe to switch
- * at runtime: 'bypassPermissions'/'plan' aren't here because bypass requires the
- * session to be launched with --dangerously-skip-permissions, and plan needs
- * exit-plan handling we don't have yet.
+ * Agent permission modes we expose. These are runtime-switchable via
+ * setPermissionMode (verified). 'auto' uses a model classifier to approve/deny,
+ * escalating to a prompt only when unsure. Excluded: 'bypassPermissions' (needs
+ * the session launched with --dangerously-skip-permissions) and 'plan' (needs
+ * exit-plan handling we don't have yet).
  */
-export type PermissionMode = "default" | "acceptEdits";
+export type PermissionMode = "default" | "acceptEdits" | "auto";
 
 /** A single TodoWrite item, as surfaced to the plugin's todo list. */
 export interface TodoItem {

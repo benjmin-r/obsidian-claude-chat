@@ -16,6 +16,7 @@ const DRAFT_KEY = "occ-chat-draft";
 const PERMISSION_MODES: ReadonlyArray<{ mode: PermissionMode; label: string; icon: string }> = [
 	{ mode: "default", label: "Confirm destructive actions", icon: "shield" },
 	{ mode: "acceptEdits", label: "Auto-accept edits", icon: "pencil" },
+	{ mode: "auto", label: "Auto — model decides", icon: "sparkles" },
 ];
 
 /** Human-friendly text for a permission request's input (the bash command, or JSON). */
