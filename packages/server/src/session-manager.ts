@@ -23,6 +23,9 @@ export interface SessionManagerConfig {
 	bufferLimit?: number;
 }
 
+/** Result of the pre-send guard. */
+export type SendGate = "ok" | "stale" | "external_busy" | "external_idle";
+
 export interface SessionManagerDeps extends SessionActorDeps {
 	/** generates unique provisional handle ids. */
 	newHandleId: () => string;
@@ -70,6 +73,25 @@ export class SessionManager {
 		const mtime = await this.lastModified(this.config.cwd, sid);
 		if (mtime === undefined) return;
 		actor.setStale(mtime > actor.selfMtime + SessionManager.STALE_SLACK_MS);
+	}
+
+	/**
+	 * Fresh pre-send guard (also refreshes the actor's banners). Staleness takes
+	 * precedence and is never overridable; external activity is overridable by the
+	 * caller. A brand-new session (no SDK id yet) is always 'ok'.
+	 */
+	async sendGate(actor: SessionActor): Promise<SendGate> {
+		const sid = actor.sdkSessionId;
+		if (!sid) return "ok";
+		const mtime = await this.lastModified(this.config.cwd, sid);
+		const stale = mtime !== undefined && mtime > actor.selfMtime + SessionManager.STALE_SLACK_MS;
+		actor.setStale(stale);
+		const act = this.detect(this.config.cwd, sid);
+		actor.setExternalActivity(act);
+		if (stale) return "stale";
+		if (act.severity === "busy") return "external_busy";
+		if (act.severity === "idle") return "external_idle";
+		return "ok";
 	}
 
 	/** Start a brand-new session. */

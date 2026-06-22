@@ -1,4 +1,4 @@
-import type { BridgeEvent } from "@occ/protocol";
+import type { BridgeEvent, ExternalSeverity } from "@occ/protocol";
 import { Connection, createWriterRegistry } from "../src/connection";
 import { SessionManager } from "../src/session-manager";
 import { flush, makeFakeQuery } from "./fake-query";
@@ -276,6 +276,56 @@ describe("Connection session flow", () => {
 		conn.handle({ type: "set_permission_mode", sessionId, mode: "acceptEdits" });
 		await flush();
 		expect(fake.modeSet()).toBe("acceptEdits");
+	});
+
+	it("guards sends: blocks stale (no override) and external-busy (overridable with force)", async () => {
+		let mtime = 100;
+		let severity: ExternalSeverity = "none";
+		const fake = makeFakeQuery();
+		let n = 0;
+		const manager = new SessionManager(
+			{
+				runQuery: fake.runQuery,
+				now: () => 1,
+				newHandleId: () => `h${(n += 1)}`,
+				listStored: async () => [],
+				loadHistory: async () => [],
+				renameStored: async () => undefined,
+				deleteStored: async () => undefined,
+				detectExternalActivity: () => ({ severity }),
+				sessionLastModified: async () => mtime,
+			},
+			{ cwd: "/v", defaultModel: "m" }
+		);
+		const writers = createWriterRegistry();
+		const sent: BridgeEvent[] = [];
+		const conn = new Connection({ manager, token: "secret", writers, send: (e) => sent.push(e) });
+		conn.handle({ type: "hello", token: "secret" });
+		conn.handle({ type: "resume_session", sessionId: "sess-1" }); // resumed actor has an SDK id + mtime baseline 100
+		await flush();
+		await flush();
+
+		// stale: on-disk advanced past the baseline → blocked, never enqueued, no override.
+		mtime = 1_000_000;
+		sent.length = 0;
+		conn.handle({ type: "user_message", sessionId: "sess-1", text: "a" });
+		await flush();
+		expect(sent.some((e) => e.type === "send_blocked" && e.reason === "stale")).toBe(true);
+		expect(fake.options()).toBeUndefined(); // query never started
+
+		// not stale but externally busy → blocked without force.
+		mtime = 100;
+		severity = "busy";
+		sent.length = 0;
+		conn.handle({ type: "user_message", sessionId: "sess-1", text: "b" });
+		await flush();
+		expect(sent.some((e) => e.type === "send_blocked" && e.reason === "external_busy")).toBe(true);
+		expect(fake.options()).toBeUndefined();
+
+		// with force → enqueued (query starts).
+		conn.handle({ type: "user_message", sessionId: "sess-1", text: "b", force: true });
+		await flush();
+		expect(fake.options()).toBeDefined();
 	});
 
 	it("forwards interrupt", () => {

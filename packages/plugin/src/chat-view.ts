@@ -45,6 +45,8 @@ export class ChatView extends ItemView {
 	private state: ChatState;
 	private client!: BridgeClient;
 	private pendingText: string | undefined;
+	/** last text dispatched to the server; used to roll back if the server blocks it. */
+	private lastSentText: string | undefined;
 
 	private connIconEl!: HTMLElement;
 	private activityIconEl!: HTMLElement;
@@ -273,11 +275,27 @@ export class ChatView extends ItemView {
 	private sendCurrent(): void {
 		const text = this.inputEl.value.trim();
 		if (!text) return;
+		// Gate against staleness / external activity (the server enforces this too).
+		if (this.state.sessionId) {
+			if (this.state.stale) {
+				this.showStaleBlockedNotice();
+				return; // keep the draft — Reload + review the conversation first
+			}
+			if (this.state.externalActivity !== "none") {
+				this.confirmSendAnyway(text);
+				return;
+			}
+		}
+		this.dispatchSend(text, false);
+	}
+
+	private dispatchSend(text: string, force: boolean): void {
 		this.inputEl.value = "";
 		window.localStorage.removeItem(this.draftKey());
 		this.stickBottom = true; // following our own new message
 		if (this.state.sessionId) {
-			this.client.userMessage(this.state.sessionId, text);
+			this.lastSentText = text;
+			this.client.userMessage(this.state.sessionId, text, force);
 			this.state = appendUserMessage(this.state, text);
 		} else {
 			// no session yet — open one and flush the text when it is ready.
@@ -289,6 +307,42 @@ export class ChatView extends ItemView {
 		this.render();
 	}
 
+	private confirmSendAnyway(text: string): void {
+		const busy = this.state.externalActivity === "busy";
+		const where = busy ? "is being used in a terminal right now" : "is also open in a terminal";
+		new ConfirmModal(
+			this.app,
+			"Send anyway?",
+			`This session ${where}. Sending may conflict with the other session.`,
+			"Send anyway",
+			() => this.dispatchSend(text, true)
+		).open();
+	}
+
+	private showStaleBlockedNotice(): void {
+		new Notice(
+			"You tried to send to a stale session — reload and review the conversation flow, then decide if sending still matters.",
+			0
+		);
+	}
+
+	/** A send our local gate allowed but the server refused (a race): roll back + restore. */
+	private restoreBlockedDraft(reason: "stale" | "external_busy" | "external_idle"): void {
+		if (this.lastSentText !== undefined) {
+			const items = this.state.items;
+			const last = items[items.length - 1];
+			if (last && last.kind === "user" && last.text === this.lastSentText) {
+				this.state = { ...this.state, items: items.slice(0, -1) };
+			}
+			this.inputEl.value = this.lastSentText;
+			window.localStorage.setItem(this.draftKey(), this.lastSentText);
+			this.lastSentText = undefined;
+		}
+		if (reason === "stale") this.showStaleBlockedNotice();
+		else new Notice("Message not sent — this session is open in a terminal. Tap Send to override, or wait.", 8000);
+		this.render();
+	}
+
 	/** Per-leaf draft key so parallel chat tabs don't clobber each other's draft. */
 	private draftKey(): string {
 		const id = (this.leaf as unknown as { id?: string }).id;
@@ -297,6 +351,10 @@ export class ChatView extends ItemView {
 
 	private onEvent(event: BridgeEvent): void {
 		this.state = applyEvent(this.state, event);
+		if (event.type === "send_blocked") {
+			this.restoreBlockedDraft(event.reason);
+			return; // restoreBlockedDraft re-renders
+		}
 		if (event.type === "history_page") {
 			// Capture pre-prepend metrics so render() can keep the viewport stable.
 			this.prependAdjust = { prevHeight: this.messagesEl.scrollHeight, prevTop: this.messagesEl.scrollTop };

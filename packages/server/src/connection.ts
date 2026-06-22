@@ -71,7 +71,7 @@ export class Connection {
 		}
 		switch (msg.type) {
 			case "user_message":
-				this.onUserMessage(msg.sessionId, msg.text);
+				this.onUserMessage(msg.sessionId, msg.text, msg.force ?? false);
 				return {};
 			case "permission_decision":
 				this.withActor(msg.sessionId, (a) => a.decidePermission(msg.toolUseId, msg.allow, msg.message));
@@ -133,7 +133,7 @@ export class Connection {
 		return {};
 	}
 
-	private onUserMessage(sessionId: string, text: string): void {
+	private onUserMessage(sessionId: string, text: string, force: boolean): void {
 		this.withActor(sessionId, (actor) => {
 			if (this.attached?.actor !== actor) this.attach(actor);
 			if (!this.deps.writers.claim(actor, this)) {
@@ -144,8 +144,29 @@ export class Connection {
 				});
 				return;
 			}
-			actor.enqueue(text);
+			// A brand-new session (no SDK id yet) has nothing on disk to conflict with;
+			// enqueue synchronously so it starts immediately. Identified sessions go
+			// through the async guard.
+			if (!actor.sdkSessionId) {
+				actor.enqueue(text);
+				return;
+			}
+			void this.guardedEnqueue(actor, text, force);
 		});
+	}
+
+	/** Refuse a turn that would read stale context or fight a concurrent writer. */
+	private async guardedEnqueue(actor: SessionActor, text: string, force: boolean): Promise<void> {
+		const gate = await this.deps.manager.sendGate(actor);
+		if (gate === "stale") {
+			this.deps.send({ type: "send_blocked", sessionId: actor.id, reason: "stale" });
+			return;
+		}
+		if ((gate === "external_busy" || gate === "external_idle") && !force) {
+			this.deps.send({ type: "send_blocked", sessionId: actor.id, reason: gate });
+			return;
+		}
+		actor.enqueue(text);
 	}
 
 	private onNewSession(model?: string): void {
