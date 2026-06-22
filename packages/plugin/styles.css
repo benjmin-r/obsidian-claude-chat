@@ -273,6 +273,37 @@
 	display: inline-flex;
 	color: var(--text-accent);
 }
+
+.occ-activity {
+	border: 1px solid var(--background-modifier-border);
+	border-left: 3px solid var(--text-accent);
+	border-radius: 8px;
+	padding: 8px 10px;
+	margin: 4px 0;
+	background-color: var(--background-secondary);
+	font-size: var(--font-ui-small);
+}
+.occ-activity-busy {
+	border-left-color: var(--text-error);
+}
+.occ-activity-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.occ-activity-icon {
+	display: inline-flex;
+	color: var(--text-muted);
+}
+.occ-activity-busy .occ-activity-icon {
+	color: var(--text-error);
+}
+.occ-activity-buttons {
+	display: flex;
+	gap: 8px;
+	margin-top: 8px;
+}
+
 .occ-permission-input {
 	margin: 0;
 	max-height: 30vh;

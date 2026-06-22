@@ -138,6 +138,47 @@ describe("SessionActor", () => {
 		expect(fake.interrupted()).toBe(true);
 	});
 
+	it("broadcasts external activity on change, ignores no-ops, and re-emits on attach", () => {
+		const { actor } = makeActor();
+		const events = collect(actor);
+		actor.setExternalActivity({ severity: "busy", pid: 9, entrypoint: "cli" });
+		expect(events.some((e) => e.type === "external_activity" && e.severity === "busy")).toBe(true);
+		const n = events.length;
+		actor.setExternalActivity({ severity: "busy", pid: 9, entrypoint: "cli" }); // identical → no-op
+		expect(events.length).toBe(n);
+		const late = collect(actor); // re-emitted to a fresh subscriber
+		expect(late.some((e) => e.type === "external_activity" && e.severity === "busy")).toBe(true);
+	});
+
+	it("broadcasts staleness on change and re-emits on attach", () => {
+		const { actor } = makeActor();
+		const events = collect(actor);
+		actor.setStale(true);
+		expect(events.some((e) => e.type === "session_stale" && e.stale === true)).toBe(true);
+		const late = collect(actor);
+		expect(late.some((e) => e.type === "session_stale" && e.stale === true)).toBe(true);
+	});
+
+	it("resets the staleness baseline when our own turn completes", async () => {
+		const { fake, actor } = makeActor();
+		actor.markSelfMtime(0);
+		actor.setStale(true);
+		actor.enqueue("hi");
+		fake.emit({ type: "result", subtype: "success", is_error: false });
+		await flush();
+		expect(actor.stale).toBe(false);
+		expect(actor.selfMtime).toBe(1000); // now()
+	});
+
+	it("tracks listenerCount", () => {
+		const { actor } = makeActor();
+		expect(actor.listenerCount).toBe(0);
+		const off = actor.subscribe(() => undefined);
+		expect(actor.listenerCount).toBe(1);
+		off();
+		expect(actor.listenerCount).toBe(0);
+	});
+
 	it("starts in default mode and changes permission mode at runtime", async () => {
 		const { fake, actor } = makeActor();
 		actor.enqueue("hi");

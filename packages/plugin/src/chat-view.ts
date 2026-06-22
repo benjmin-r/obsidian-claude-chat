@@ -60,6 +60,7 @@ export class ChatView extends ItemView {
 	private resizeObserver?: ResizeObserver;
 	private scrollPillEl!: HTMLElement;
 	private permissionEl!: HTMLElement;
+	private activityBannerEl!: HTMLElement;
 	private todosEl!: HTMLElement;
 	private pickerEl!: HTMLElement;
 	private pickerOpen = false;
@@ -198,6 +199,7 @@ export class ChatView extends ItemView {
 		this.resizeObserver.observe(this.messagesInnerEl);
 
 		this.permissionEl = root.createDiv();
+		this.activityBannerEl = root.createDiv();
 
 		const inputRow = root.createDiv({ cls: "occ-input-row" });
 		this.inputEl = inputRow.createEl("textarea");
@@ -350,6 +352,7 @@ export class ChatView extends ItemView {
 		const prevTop = this.messagesEl.scrollTop;
 		this.renderMessages();
 		this.renderPermission();
+		this.renderActivityBanner();
 		if (this.prependAdjust) {
 			// Keep the previously-visible messages in place after prepending older ones.
 			this.messagesEl.scrollTop = this.prependAdjust.prevTop + (this.messagesEl.scrollHeight - this.prependAdjust.prevHeight);
@@ -677,6 +680,28 @@ export class ChatView extends ItemView {
 		deny.addEventListener("click", () => this.decide(req.toolUseId, false));
 		const allow = buttons.createEl("button", { text: "Allow", cls: "mod-warning" });
 		allow.addEventListener("click", () => this.decide(req.toolUseId, true));
+	}
+
+	/** Banner for staleness / external activity. Stale takes precedence (it's the binding gate). */
+	private renderActivityBanner(): void {
+		this.activityBannerEl.empty();
+		const { stale, externalActivity } = this.state;
+		if (!stale && externalActivity === "none") return;
+		const box = this.activityBannerEl.createDiv({ cls: "occ-activity" });
+		const head = box.createDiv({ cls: "occ-activity-head" });
+
+		if (stale) {
+			box.addClass("occ-activity-stale");
+			setIcon(head.createSpan({ cls: "occ-activity-icon" }), "refresh-cw");
+			head.createSpan({ text: "Newer messages were added elsewhere." });
+			return;
+		}
+
+		const busy = externalActivity === "busy";
+		box.addClass(busy ? "occ-activity-busy" : "occ-activity-idle");
+		const who = this.state.externalEntrypoint ? ` (${this.state.externalEntrypoint})` : "";
+		setIcon(head.createSpan({ cls: "occ-activity-icon" }), busy ? "alert-triangle" : "users");
+		head.createSpan({ text: busy ? `Active in a terminal right now${who}.` : `Also open in a terminal${who}.` });
 	}
 }
 

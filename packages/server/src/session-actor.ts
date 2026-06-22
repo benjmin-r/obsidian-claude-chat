@@ -26,6 +26,7 @@ import {
 	sdkSessionId,
 } from "@occ/protocol";
 import { AsyncInputQueue } from "./async-queue";
+import type { ExternalActivity } from "./external-activity";
 import type {
 	CanUseTool,
 	Clock,
@@ -68,6 +69,10 @@ export class SessionActor {
 	private started = false;
 	private _status: SessionStatus = "idle";
 	private _permissionMode: PermissionMode = "default";
+	private _external: ExternalActivity = { severity: "none" };
+	private _stale = false;
+	/** epoch ms of our last own write to the session file; baseline for staleness. */
+	private _selfMtime = 0;
 	private _sdkSessionId: string | undefined;
 	private _updatedAt: number;
 	private _messageCount = 0;
@@ -100,6 +105,22 @@ export class SessionActor {
 
 	get status(): SessionStatus {
 		return this._status;
+	}
+
+	get externalActivity(): ExternalActivity {
+		return this._external;
+	}
+
+	get stale(): boolean {
+		return this._stale;
+	}
+
+	get selfMtime(): number {
+		return this._selfMtime;
+	}
+
+	get listenerCount(): number {
+		return this.listeners.size;
 	}
 
 	get model(): string {
@@ -151,6 +172,37 @@ export class SessionActor {
 		}
 	}
 
+	/** Update the external-activity state (corruption guard); broadcast on change. */
+	setExternalActivity(act: ExternalActivity): void {
+		if (
+			act.severity === this._external.severity &&
+			act.pid === this._external.pid &&
+			act.entrypoint === this._external.entrypoint
+		) {
+			return;
+		}
+		this._external = act;
+		this.broadcast({
+			type: "external_activity",
+			sessionId: this.id,
+			severity: act.severity,
+			entrypoint: act.entrypoint,
+			pid: act.pid,
+		});
+	}
+
+	/** Flag/clear staleness (on-disk advanced past us); broadcast on change. */
+	setStale(stale: boolean): void {
+		if (stale === this._stale) return;
+		this._stale = stale;
+		this.broadcast({ type: "session_stale", sessionId: this.id, stale });
+	}
+
+	/** Baseline mtime for staleness; the manager seeds this on resume. */
+	markSelfMtime(ms: number): void {
+		this._selfMtime = ms;
+	}
+
 	/** Resolve a pending destructive-tool permission request. */
 	decidePermission(toolUseId: string, allow: boolean, message?: string): void {
 		const resolve = this.pendingPermissions.get(toolUseId);
@@ -174,6 +226,17 @@ export class SessionActor {
 		for (const event of this.buffer) listener(event);
 		listener(this.statusEvent());
 		if (this.pendingRequest) listener(this.pendingRequest);
+		// Re-surface live (non-buffered) flags so a re-attaching client shows the banner.
+		if (this._external.severity !== "none") {
+			listener({
+				type: "external_activity",
+				sessionId: this.id,
+				severity: this._external.severity,
+				entrypoint: this._external.entrypoint,
+				pid: this._external.pid,
+			});
+		}
+		if (this._stale) listener({ type: "session_stale", sessionId: this.id, stale: true });
 		this.listeners.add(listener);
 		return () => this.listeners.delete(listener);
 	}
@@ -260,6 +323,8 @@ export class SessionActor {
 					this.record(event);
 				}
 				if (msg.type === "result") {
+					this._selfMtime = this.deps.now(); // our write just landed; reset staleness baseline
+					this._stale = false;
 					this.setStatus("idle");
 				}
 			}

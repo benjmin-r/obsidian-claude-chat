@@ -4,7 +4,15 @@
  */
 
 import { loadConfig } from "./config";
-import { deleteStored, listStored, loadHistory, renameStored, runQuery } from "./sdk-adapter";
+import {
+	deleteStored,
+	detectExternalActivity,
+	listStored,
+	loadHistory,
+	renameStored,
+	runQuery,
+	sessionLastModified,
+} from "./sdk-adapter";
 import { SessionManager } from "./session-manager";
 import { startTransport } from "./ws-transport";
 
@@ -21,11 +29,17 @@ function main(): void {
 			loadHistory,
 			renameStored,
 			deleteStored,
+			detectExternalActivity,
+			sessionLastModified,
 		},
 		{ cwd: config.vaultCwd, defaultModel: config.defaultModel, bufferLimit: config.bufferLimit }
 	);
 
 	const transport = startTransport(config, manager);
+
+	// Proactively surface external activity + staleness to attached clients.
+	const poll = setInterval(() => manager.pollExternalActivity(), 3000);
+	poll.unref();
 
 	// eslint-disable-next-line no-console
 	console.log(`[occ] listening on ws://${config.host}:${config.port} (cwd=${config.vaultCwd}, model=${config.defaultModel})`);

@@ -7,6 +7,7 @@
 
 import type {
 	BridgeEvent,
+	ExternalSeverity,
 	PermissionMode,
 	PermissionRequestEvent,
 	RenderEvent,
@@ -48,6 +49,12 @@ export interface ChatState {
 	costUsd?: number;
 	/** the session's agent permission mode. */
 	permissionMode: PermissionMode;
+	/** a live process other than this server holds the session (corruption guard). */
+	externalActivity: ExternalSeverity;
+	/** the foreign holder's entrypoint, for the banner ("cli" | "sdk-cli" | …). */
+	externalEntrypoint?: string;
+	/** the on-disk transcript advanced past the server's actor — reload before sending. */
+	stale: boolean;
 	error?: string;
 }
 
@@ -63,6 +70,8 @@ export function initialState(model: string): ChatState {
 		sessions: [],
 		hasOlderHistory: false,
 		permissionMode: "default",
+		externalActivity: "none",
+		stale: false,
 	};
 }
 
@@ -128,6 +137,10 @@ export function applyEvent(state: ChatState, event: BridgeEvent): ChatState {
 				// a resolved/expired request is implied once we're no longer awaiting.
 				pendingPermission: event.status === "awaiting_permission" ? state.pendingPermission : undefined,
 			};
+		case "external_activity":
+			return { ...state, externalActivity: event.severity, externalEntrypoint: event.entrypoint };
+		case "session_stale":
+			return { ...state, stale: event.stale };
 		case "history_page":
 			return prependHistory(state, event.events, event.hasMore);
 		case "sessions_list":

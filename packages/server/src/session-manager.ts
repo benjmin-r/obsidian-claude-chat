@@ -8,7 +8,14 @@
 
 import { mapHistoryMessages, type SessionSummary } from "@occ/protocol";
 import { SessionActor, type SessionActorDeps } from "./session-actor";
-import type { DeleteStored, ListStored, LoadHistory, RenameStored } from "./ports";
+import type {
+	DeleteStored,
+	DetectExternalActivity,
+	ListStored,
+	LoadHistory,
+	RenameStored,
+	SessionLastModified,
+} from "./ports";
 
 export interface SessionManagerConfig {
 	cwd: string;
@@ -27,16 +34,43 @@ export interface SessionManagerDeps extends SessionActorDeps {
 	renameStored: RenameStored;
 	/** permanently delete a persisted session. */
 	deleteStored: DeleteStored;
+	/** detect a live foreign holder of a session (corruption guard); optional. */
+	detectExternalActivity?: DetectExternalActivity;
+	/** on-disk last-modified time of a session (staleness); optional. */
+	sessionLastModified?: SessionLastModified;
 }
 
 export class SessionManager {
 	private readonly index = new Map<string, SessionActor>();
 	private readonly actors = new Set<SessionActor>();
 
+	private readonly detect: DetectExternalActivity;
+	private readonly lastModified: SessionLastModified;
+	private static readonly STALE_SLACK_MS = 3000;
+
 	constructor(
 		private readonly deps: SessionManagerDeps,
 		private readonly config: SessionManagerConfig
-	) {}
+	) {
+		this.detect = deps.detectExternalActivity ?? (() => ({ severity: "none" }));
+		this.lastModified = deps.sessionLastModified ?? (async () => undefined);
+	}
+
+	/** Refresh external-activity + staleness for every attached, identified session. */
+	pollExternalActivity(): void {
+		for (const actor of this.actors) {
+			const sid = actor.sdkSessionId;
+			if (!sid || actor.listenerCount === 0) continue;
+			actor.setExternalActivity(this.detect(this.config.cwd, sid));
+			void this.refreshStale(actor, sid);
+		}
+	}
+
+	private async refreshStale(actor: SessionActor, sid: string): Promise<void> {
+		const mtime = await this.lastModified(this.config.cwd, sid);
+		if (mtime === undefined) return;
+		actor.setStale(mtime > actor.selfMtime + SessionManager.STALE_SLACK_MS);
+	}
 
 	/** Start a brand-new session. */
 	create(model?: string): SessionActor {
@@ -81,6 +115,9 @@ export class SessionManager {
 		try {
 			const messages = await this.deps.loadHistory(this.config.cwd, sessionId);
 			actor.seedHistory(mapHistoryMessages(messages, sessionId));
+			// Baseline staleness against the file's current mtime (we're now in sync).
+			const mtime = await this.lastModified(this.config.cwd, sessionId);
+			if (mtime !== undefined) actor.markSelfMtime(mtime);
 		} catch {
 			// history is best-effort; resume still works for the next turn.
 		}

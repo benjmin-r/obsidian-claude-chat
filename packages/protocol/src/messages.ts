@@ -152,6 +152,23 @@ export interface SessionStatusEvent {
 	permissionMode?: PermissionMode;
 }
 
+/** A session is held by a live process other than this server (corruption guard). */
+export interface ExternalActivityEvent {
+	type: "external_activity";
+	sessionId: string;
+	severity: ExternalSeverity;
+	/** the foreign holder's entrypoint ("cli" | "sdk-cli" | …) and pid, for display. */
+	entrypoint?: string;
+	pid?: number;
+}
+
+/** The on-disk transcript has advanced past what this server's actor holds. */
+export interface SessionStaleEvent {
+	type: "session_stale";
+	sessionId: string;
+	stale: boolean;
+}
+
 /** A batch of older transcript events to PREPEND (reply to `load_older`). */
 export interface HistoryPageEvent {
 	type: "history_page";
@@ -176,6 +193,8 @@ export type BridgeEvent =
 	| ErrorEvent
 	| SessionsListEvent
 	| SessionStatusEvent
+	| ExternalActivityEvent
+	| SessionStaleEvent
 	| HistoryPageEvent;
 
 /** The subset of BridgeEvents that are derived purely from SDK stream messages. */

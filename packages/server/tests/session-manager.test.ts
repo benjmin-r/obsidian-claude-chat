@@ -1,6 +1,13 @@
 import type { BridgeEvent } from "@occ/protocol";
 import { SessionManager } from "../src/session-manager";
-import type { DeleteStored, ListStored, LoadHistory, RenameStored } from "../src/ports";
+import type {
+	DeleteStored,
+	DetectExternalActivity,
+	ListStored,
+	LoadHistory,
+	RenameStored,
+	SessionLastModified,
+} from "../src/ports";
 import { flush, makeFakeQuery } from "./fake-query";
 
 function makeManager(
@@ -9,6 +16,8 @@ function makeManager(
 		loadHistory?: LoadHistory;
 		renameStored?: RenameStored;
 		deleteStored?: DeleteStored;
+		detectExternalActivity?: DetectExternalActivity;
+		sessionLastModified?: SessionLastModified;
 	} = {}
 ) {
 	const fake = makeFakeQuery();
@@ -22,6 +31,8 @@ function makeManager(
 			loadHistory: opts.loadHistory ?? (async () => []),
 			renameStored: opts.renameStored ?? (async () => undefined),
 			deleteStored: opts.deleteStored ?? (async () => undefined),
+			detectExternalActivity: opts.detectExternalActivity,
+			sessionLastModified: opts.sessionLastModified,
 		},
 		{ cwd: "/v", defaultModel: "claude-opus-4-8" }
 	);
@@ -58,6 +69,31 @@ describe("SessionManager", () => {
 		expect(reconstructed.id).toBe("old-session");
 		expect(manager.resume("old-session")).toBe(reconstructed);
 		expect(manager.get("old-session")).toBe(reconstructed);
+	});
+
+	it("pollExternalActivity surfaces activity + staleness to attached, identified sessions", async () => {
+		const { fake, manager } = makeManager({
+			detectExternalActivity: () => ({ severity: "busy", pid: 5, entrypoint: "cli" }),
+			sessionLastModified: async () => 10_000,
+		});
+		const actor = manager.create();
+		const events: BridgeEvent[] = [];
+		actor.subscribe((e) => events.push(e)); // attach a listener
+		actor.enqueue("hi");
+		fake.emit({ type: "system", subtype: "init", session_id: "sdk-1" }); // give it a real id
+		await flush();
+		actor.markSelfMtime(0); // 10_000 > 0 + slack → stale
+		manager.pollExternalActivity();
+		await flush();
+		expect(events.some((e) => e.type === "external_activity" && e.severity === "busy")).toBe(true);
+		expect(events.some((e) => e.type === "session_stale" && e.stale === true)).toBe(true);
+	});
+
+	it("pollExternalActivity skips sessions with no listeners or no sdk id", () => {
+		const { manager } = makeManager({ detectExternalActivity: () => ({ severity: "busy" }) });
+		const actor = manager.create(); // no listeners, no sdk id
+		manager.pollExternalActivity();
+		expect(actor.externalActivity.severity).toBe("none");
 	});
 
 	it("listSummaries merges active + stored, dedupes, sorts newest first", async () => {

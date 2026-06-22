@@ -155,6 +155,20 @@ describe("view-model", () => {
 		expect(s.permissionMode).toBe("acceptEdits");
 	});
 
+	it("tracks external activity and staleness", () => {
+		let s = applyEvent(initialState("m"), {
+			type: "external_activity",
+			sessionId: SID,
+			severity: "busy",
+			entrypoint: "cli",
+			pid: 3,
+		});
+		expect(s.externalActivity).toBe("busy");
+		expect(s.externalEntrypoint).toBe("cli");
+		s = applyEvent(s, { type: "session_stale", sessionId: SID, stale: true });
+		expect(s.stale).toBe(true);
+	});
+
 	it("session_status carries hasOlderHistory", () => {
 		const s = applyEvent(initialState("m"), {
 			type: "session_status",
