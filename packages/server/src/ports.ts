@@ -4,6 +4,7 @@
  * `sdk-adapter.ts` (the `query()` shell) and `ws-transport.ts` (the socket).
  */
 
+import type { ExternalActivity } from "./external-activity";
 import type { HistoryMessage, PermissionMode, SdkMessage } from "@occ/protocol";
 
 export interface PermissionAllow {
@@ -72,3 +73,13 @@ export type RenameStored = (cwd: string, sessionId: string, title: string) => Pr
 
 /** Permanently delete a persisted session (real = SDK `deleteSession`). */
 export type DeleteStored = (cwd: string, sessionId: string) => Promise<void>;
+
+/**
+ * Detect whether a session is held by a live process other than this server, in
+ * the given working dir (real = reads `~/.claude/sessions/*.json`). Best-effort:
+ * returns `{ severity: "none" }` if the registry is missing/unreadable.
+ */
+export type DetectExternalActivity = (cwd: string, sessionId: string) => ExternalActivity;
+
+/** The on-disk last-modified epoch ms of a session, or undefined (real = SDK `getSessionInfo`). */
+export type SessionLastModified = (cwd: string, sessionId: string) => Promise<number | undefined>;

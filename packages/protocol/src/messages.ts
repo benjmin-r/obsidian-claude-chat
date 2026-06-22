@@ -22,6 +22,12 @@ export type SessionStatus = "idle" | "working" | "awaiting_permission";
  */
 export type PermissionMode = "default" | "acceptEdits" | "auto";
 
+/**
+ * Whether a session is held by a live process OTHER than this server, in the
+ * same working dir: 'busy' = mid-turn, 'idle' = open but parked, 'none' = free.
+ */
+export type ExternalSeverity = "none" | "idle" | "busy";
+
 /** A single TodoWrite item, as surfaced to the plugin's todo list. */
 export interface TodoItem {
 	content: string;
