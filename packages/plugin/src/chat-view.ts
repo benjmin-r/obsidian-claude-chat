@@ -75,6 +75,9 @@ export class ChatView extends ItemView {
 	/** true while we should keep pinned to the bottom (re-scroll as async markdown grows). */
 	private stickBottom = true;
 	private lastScrollTop = 0;
+	/** the current session's title, and the derived tab header text. */
+	private currentTitle: string | undefined;
+	private tabTitle = "Claude Chat";
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -90,7 +93,16 @@ export class ChatView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return "Claude Chat";
+		return this.tabTitle;
+	}
+
+	/** Reflect the current session title in the tab header (prefixed so it's readable). */
+	private updateTabTitle(): void {
+		const t = this.currentTitle?.trim();
+		const display = t ? `CC: ${t}` : "Claude Chat";
+		if (display === this.tabTitle) return;
+		this.tabTitle = display;
+		(this.leaf as unknown as { updateHeader?: () => void }).updateHeader?.();
 	}
 
 	getIcon(): string {
@@ -213,6 +225,8 @@ export class ChatView extends ItemView {
 		this.pickerOpen = false;
 		this.stickBottom = true;
 		this.applyDesiredMode = true;
+		this.currentTitle = undefined;
+		this.updateTabTitle();
 		this.state = { ...initialState(this.selectedModel), connection: this.state.connection };
 		this.client.newSession(this.selectedModel);
 		this.render();
@@ -242,10 +256,12 @@ export class ChatView extends ItemView {
 		}, 5000);
 	}
 
-	private resumeSession(sessionId: string): void {
+	private resumeSession(sessionId: string, title?: string): void {
 		this.pickerOpen = false;
 		this.pendingText = undefined;
 		this.stickBottom = true; // switching in should always land at the bottom
+		this.currentTitle = title;
+		this.updateTabTitle();
 		// Clear the current transcript; the resumed session's history replays in.
 		this.state = { ...initialState(this.selectedModel), connection: this.state.connection };
 		this.client.resumeSession(sessionId);
@@ -289,6 +305,12 @@ export class ChatView extends ItemView {
 			if (this.sessionsRefreshTimer !== undefined) {
 				window.clearTimeout(this.sessionsRefreshTimer);
 				this.sessionsRefreshTimer = undefined;
+			}
+			// Keep the tab title in sync if the current session's title changed.
+			const cur = event.sessions.find((s) => s.sessionId === this.state.sessionId);
+			if (cur?.title) {
+				this.currentTitle = cur.title;
+				this.updateTabTitle();
 			}
 		}
 		if (event.type === "session_status" && event.sessionId) {
@@ -393,7 +415,7 @@ export class ChatView extends ItemView {
 			const when = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "";
 			const meta = [isCurrent ? "● current" : s.status, when].filter(Boolean).join(" · ");
 			if (meta) main.createDiv({ cls: "occ-picker-meta", text: meta });
-			main.addEventListener("click", () => this.resumeSession(s.sessionId));
+			main.addEventListener("click", () => this.resumeSession(s.sessionId, named || undefined));
 
 			const label = named || `New session — started ${startedAgo}`;
 			const more = item.createEl("button", { cls: "occ-picker-more" });
@@ -441,6 +463,10 @@ export class ChatView extends ItemView {
 	private openRename(sessionId: string, current: string): void {
 		new RenameModal(this.app, current, (title) => {
 			this.client.renameSession(sessionId, title);
+			if (sessionId === this.state.sessionId) {
+				this.currentTitle = title;
+				this.updateTabTitle();
+			}
 			// The server pushes a refreshed sessions_list; nudge a refresh too.
 			this.refreshSessions();
 			this.renderPicker();
