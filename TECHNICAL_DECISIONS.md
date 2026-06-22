@@ -6,6 +6,38 @@ Each entry is ≤200 words.
 
 ---
 
+## TDL-20260622-002: Guard concurrent writers + reconcile stale sessions
+
+**Date:** 2026-06-22
+**Status:** Implemented
+**Context:** A `SessionActor` holds one long-lived in-memory `query()`. If the same
+session is continued in the CLI, the plugin (a) shows a stale transcript and (b)
+can fork/corrupt the `.jsonl` by appending from stale context — even with no
+concurrent process. There was no cross-process awareness.
+**Decision:** Two signals, one gating surface.
+
+- **External activity** (corruption guard): read Claude Code's live-process
+  registry `~/.claude/sessions/*.json`, scoped to `cwd === vaultCwd`, pid-alive,
+  excluding our own subprocess tree (`/proc` PPID walk). Severity `busy|idle|none`.
+- **Staleness**: on-disk `lastModified` (SDK `getSessionInfo`) vs the actor's
+  last-self-write baseline.
+
+Enforced at `enqueue` (server-authoritative) + mirrored in the plugin: **stale ⇒
+block, no override** (persistent notice, must Reload first); **external busy/idle ⇒
+block-with-override** ("send anyway"). Reading is never blocked. Reload = drop the
+cached actor and re-resume from disk (`reloadSession`). Idle sessions with no
+attached client are reaped after 5 min so we stop being a writer the user's own
+CLI would conflict with.
+**Alternatives:** server-pushes-fresh-transcript (actor-swap under live
+connections) — rejected as risky; reload reuses the client resume path instead.
+**Consequences:** best-effort (registry absent ⇒ no guard); a TOCTOU window
+remains (caught by the next turn/poll); concurrent multi-client reload orphans
+other clients until they re-interact.
+**Files:** `packages/server/src/{external-activity,session-actor,session-manager,
+connection,sdk-adapter}.ts`, `packages/plugin/src/{view-model,chat-view,bridge-client}.ts`.
+
+---
+
 ## TDL-20260622-001: SDK sessions resume by id but aren't listed in the CLI picker
 
 **Date:** 2026-06-22
