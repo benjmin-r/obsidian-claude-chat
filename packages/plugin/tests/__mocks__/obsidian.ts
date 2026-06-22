@@ -157,6 +157,7 @@ export class App {
 		openLinkText: jest.fn().mockResolvedValue(undefined),
 		getLeavesOfType: jest.fn().mockReturnValue([]),
 		getRightLeaf: jest.fn().mockReturnValue(new WorkspaceLeaf()),
+		getLeaf: jest.fn().mockReturnValue(new WorkspaceLeaf()),
 		revealLeaf: jest.fn().mockResolvedValue(undefined),
 		on: jest.fn(),
 		off: jest.fn(),

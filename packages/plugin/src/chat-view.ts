@@ -191,8 +191,8 @@ export class ChatView extends ItemView {
 		this.inputEl = inputRow.createEl("textarea");
 		this.inputEl.placeholder = "Message Claude…";
 		// Restore + persist the unsent draft across view reloads.
-		this.inputEl.value = window.localStorage.getItem(DRAFT_KEY) ?? "";
-		this.inputEl.addEventListener("input", () => window.localStorage.setItem(DRAFT_KEY, this.inputEl.value));
+		this.inputEl.value = window.localStorage.getItem(this.draftKey()) ?? "";
+		this.inputEl.addEventListener("input", () => window.localStorage.setItem(this.draftKey(), this.inputEl.value));
 		this.inputEl.addEventListener("keydown", (e) => {
 			if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
@@ -256,7 +256,7 @@ export class ChatView extends ItemView {
 		const text = this.inputEl.value.trim();
 		if (!text) return;
 		this.inputEl.value = "";
-		window.localStorage.removeItem(DRAFT_KEY);
+		window.localStorage.removeItem(this.draftKey());
 		this.stickBottom = true; // following our own new message
 		if (this.state.sessionId) {
 			this.client.userMessage(this.state.sessionId, text);
@@ -269,6 +269,12 @@ export class ChatView extends ItemView {
 			this.state = appendUserMessage(this.state, text);
 		}
 		this.render();
+	}
+
+	/** Per-leaf draft key so parallel chat tabs don't clobber each other's draft. */
+	private draftKey(): string {
+		const id = (this.leaf as unknown as { id?: string }).id;
+		return id ? `${DRAFT_KEY}:${id}` : DRAFT_KEY;
 	}
 
 	private onEvent(event: BridgeEvent): void {

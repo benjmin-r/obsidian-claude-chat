@@ -19,6 +19,13 @@ describe("ClaudeChatPlugin", () => {
 		expect(plugin.app.workspace.getRightLeaf).toHaveBeenCalled();
 	});
 
+	it("opens a fresh main-area tab for 'open in tab'", async () => {
+		const plugin = new ClaudeChatPlugin();
+		await plugin.onload();
+		await plugin.openInTab();
+		expect(plugin.app.workspace.getLeaf).toHaveBeenCalledWith("tab");
+	});
+
 	it("reveals an existing leaf instead of creating one", async () => {
 		const plugin = new ClaudeChatPlugin();
 		await plugin.onload();

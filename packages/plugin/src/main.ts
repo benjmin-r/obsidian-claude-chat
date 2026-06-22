@@ -21,6 +21,12 @@ export default class ClaudeChatPlugin extends Plugin {
 			callback: () => void this.activateView(),
 		});
 
+		this.addCommand({
+			id: "open-claude-chat-tab",
+			name: "Open Claude chat in tab",
+			callback: () => void this.openInTab(),
+		});
+
 		this.addSettingTab(new ClaudeChatSettingTab(this.app, this));
 	}
 
@@ -48,5 +54,16 @@ export default class ClaudeChatPlugin extends Plugin {
 		if (!leaf) return;
 		await leaf.setViewState({ type: VIEW_TYPE_CLAUDE_CHAT, active: true });
 		await workspace.revealLeaf(leaf);
+	}
+
+	/**
+	 * Open a NEW, independent chat in a main-area tab. Always creates a fresh tab
+	 * (never reuses one), so multiple parallel chats — each its own ChatView,
+	 * WebSocket and session — can run side by side.
+	 */
+	async openInTab(): Promise<void> {
+		const leaf = this.app.workspace.getLeaf("tab");
+		await leaf.setViewState({ type: VIEW_TYPE_CLAUDE_CHAT, active: true });
+		await this.app.workspace.revealLeaf(leaf);
 	}
 }
