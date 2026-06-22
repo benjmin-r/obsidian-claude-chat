@@ -6,6 +6,36 @@ Each entry is ≤200 words.
 
 ---
 
+## TDL-20260622-001: SDK sessions resume by id but aren't listed in the CLI picker
+
+**Date:** 2026-06-22
+**Status:** Implemented (workaround)
+**Context:** SDK-created sessions don't appear in the shell `claude` interactive
+`/resume` picker, despite living in the correct project dir — contradicting the
+assumed seamless interop.
+**Decision:** Diagnosed: the SDK tags its sessions `entrypoint: 'sdk-ts'`
+(also `userType: 'external'`, `promptSource: 'sdk'`), and Claude Code's
+interactive resume picker lists only `entrypoint: 'cli'` sessions. Resume **by id**
+works — `claude --resume <id>` recalls context (verified). No SDK option exists to
+change the entrypoint tag. Shipped a workaround: a "copy `claude --resume <id>`"
+button per session in the plugin picker.
+**Alternatives:**
+
+- Rewrite the session JSONL's `entrypoint` to `'cli'` so the picker shows it —
+  rejected: fragile (the SDK re-appends `sdk-ts` lines each turn, several fields
+  may be filtered on, and it's brittle across SDK updates).
+
+**Consequences:**
+
+- SDK↔CLI interop is "resume by explicit id", not picker-listed. The README/PLAN
+  "CLI interop verified" claim is narrowed accordingly.
+
+**Files:**
+
+- `packages/plugin/src/chat-view.ts`
+
+---
+
 ## TDL-20260621-003: Keep the transcript pinned to the bottom reliably
 
 **Date:** 2026-06-21

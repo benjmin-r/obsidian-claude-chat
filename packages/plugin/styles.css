@@ -419,7 +419,8 @@
 }
 
 .occ-picker-rename,
-.occ-picker-delete {
+.occ-picker-delete,
+.occ-picker-resume-cmd {
 	flex: 0 0 auto;
 	padding: 4px 6px;
 	background: none;

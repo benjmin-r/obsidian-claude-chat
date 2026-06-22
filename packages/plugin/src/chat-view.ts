@@ -390,6 +390,14 @@ export class ChatView extends ItemView {
 			main.addEventListener("click", () => this.resumeSession(s.sessionId));
 
 			const label = named || `New session — started ${startedAgo}`;
+			const resumeCmd = item.createEl("button", { cls: "occ-picker-resume-cmd" });
+			setIcon(resumeCmd, "terminal");
+			resumeCmd.setAttr("aria-label", "Copy shell resume command");
+			resumeCmd.addEventListener("click", (e) => {
+				e.stopPropagation();
+				this.copyToClipboard(`claude --resume ${s.sessionId}`);
+			});
+
 			const rename = item.createEl("button", { cls: "occ-picker-rename" });
 			setIcon(rename, "pencil");
 			rename.setAttr("aria-label", "Rename session");

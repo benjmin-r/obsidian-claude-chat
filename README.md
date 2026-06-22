@@ -119,8 +119,12 @@ from the ribbon (message icon) or the *Open Claude chat* command.
   in the server process), but the conversation is restored by resuming the
   session on the next attach.
 - **CLI interop:** because the server runs with `cwd` = the canonical vault path,
-  sessions are shared with the `claude` CLI (`claude --resume <id>` sees sidebar
-  sessions and vice-versa).
+  sessions are stored in the same place as the `claude` CLI, so
+  **`claude --resume <id>`** in the vault continues a sidebar session (and
+  vice-versa). Note: the CLI's interactive `/resume` *picker* lists only
+  CLI-started sessions (it filters by `entrypoint`), so SDK-created sessions are
+  resumable by id but won't appear in that list — the plugin's picker has a
+  "copy `claude --resume <id>`" button for exactly this.
 - **Single-writer rule:** drive a session from one place at a time. Extra clients
   attach in a mirrored, read-only mode (a *(mirroring)* badge); the server
   refuses a second writer until the first releases it. Don't drive the same
