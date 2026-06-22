@@ -64,10 +64,6 @@
 	cursor: pointer;
 }
 
-.occ-stop {
-	color: var(--text-error);
-}
-
 .occ-conn-connected {
 	color: var(--text-success);
 }

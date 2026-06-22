@@ -68,7 +68,6 @@ export class ChatView extends ItemView {
 	private sessionsRefreshTimer: number | undefined;
 	private inputEl!: HTMLTextAreaElement;
 	private sendBtn!: HTMLButtonElement;
-	private interruptBtn!: HTMLButtonElement;
 	/** tool blocks the user has expanded, kept across re-renders. */
 	private readonly expandedTools = new Set<string>();
 	/** set when an older-history page was just prepended, to keep the viewport stable. */
@@ -151,15 +150,9 @@ export class ChatView extends ItemView {
 		this.modeBtn.setAttr("aria-label", "Permission mode");
 		this.modeBtn.addEventListener("click", (e) => this.openModeMenu(e));
 
-		// Right-aligned status group: cost, stop (only mid-turn), connection, activity.
+		// Right-aligned status group: cost, connection, activity.
 		const status = toolbar.createDiv({ cls: "occ-status" });
 		this.costEl = status.createSpan({ cls: "occ-cost" });
-		this.interruptBtn = status.createEl("button", { cls: "occ-tool-btn occ-stop" });
-		setIcon(this.interruptBtn, "square");
-		this.interruptBtn.setAttr("aria-label", "Stop the current turn");
-		this.interruptBtn.addEventListener("click", () => {
-			if (this.state.sessionId) this.client.interrupt(this.state.sessionId);
-		});
 		this.connIconEl = status.createSpan({ cls: "occ-status-icon" });
 		this.connIconEl.addEventListener("click", () => this.openStatusLegend());
 		this.activityIconEl = status.createSpan({ cls: "occ-status-icon" });
@@ -480,12 +473,8 @@ export class ChatView extends ItemView {
 		this.activityIconEl.className = `occ-status-icon occ-act-${cls}`;
 		this.activityIconEl.setAttr("aria-label", label);
 
-		// The stop button only matters mid-turn; reserve its slot (no layout jump).
-		const working = this.state.status === "working";
-		this.interruptBtn.style.visibility = working ? "visible" : "hidden";
-		this.interruptBtn.disabled = !working;
-
 		// The Send button doubles as Stop while a turn is running.
+		const working = this.state.status === "working";
 		this.sendBtn.setText(working ? "Stop" : "Send");
 		this.sendBtn.classList.toggle("mod-warning", working);
 		this.sendBtn.classList.toggle("mod-cta", !working);
