@@ -15,6 +15,7 @@
 
 import {
 	type BridgeEvent,
+	type PermissionMode,
 	type PermissionRequestEvent,
 	type RenderEvent,
 	type SessionStatus,
@@ -66,6 +67,7 @@ export class SessionActor {
 	private handle: QueryHandle | undefined;
 	private started = false;
 	private _status: SessionStatus = "idle";
+	private _permissionMode: PermissionMode = "default";
 	private _sdkSessionId: string | undefined;
 	private _updatedAt: number;
 	private _messageCount = 0;
@@ -115,6 +117,7 @@ export class SessionActor {
 		this.handle = this.deps.runQuery(this.input, {
 			cwd: this.opts.cwd,
 			model: this.opts.model,
+			permissionMode: this._permissionMode,
 			resume: this.opts.resume,
 			canUseTool: this.canUseTool,
 		});
@@ -133,6 +136,19 @@ export class SessionActor {
 	/** Cancel the in-flight turn. */
 	async interrupt(): Promise<void> {
 		await this.handle?.interrupt();
+	}
+
+	/** Change the agent permission mode (applies to subsequent tool calls). */
+	async setPermissionMode(mode: PermissionMode): Promise<void> {
+		try {
+			await this.handle?.setPermissionMode(mode);
+			this._permissionMode = mode; // only commit on success
+			this.broadcast(this.statusEvent());
+		} catch (err) {
+			// A rejected control request must never crash the server; surface it.
+			const message = err instanceof Error ? err.message : String(err);
+			this.broadcast({ type: "error", sessionId: this.id, message: `Couldn't change mode: ${message}` });
+		}
 	}
 
 	/** Resolve a pending destructive-tool permission request. */
@@ -193,6 +209,7 @@ export class SessionActor {
 			cwd: this.opts.cwd,
 			isWriter: false, // the transport rewrites this per-connection.
 			hasOlderHistory: this.olderHistory.length > 0,
+			permissionMode: this._permissionMode,
 		};
 	}
 

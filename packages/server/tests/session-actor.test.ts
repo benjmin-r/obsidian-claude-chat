@@ -138,6 +138,46 @@ describe("SessionActor", () => {
 		expect(fake.interrupted()).toBe(true);
 	});
 
+	it("starts in default mode and changes permission mode at runtime", async () => {
+		const { fake, actor } = makeActor();
+		actor.enqueue("hi");
+		expect(fake.options()!.permissionMode).toBe("default");
+		expect(actor.statusEvent().permissionMode).toBe("default");
+		await actor.setPermissionMode("acceptEdits");
+		expect(fake.modeSet()).toBe("acceptEdits");
+		expect(actor.statusEvent().permissionMode).toBe("acceptEdits");
+	});
+
+	it("can set the permission mode before the query has started", async () => {
+		const { actor } = makeActor();
+		await actor.setPermissionMode("acceptEdits"); // no handle yet
+		expect(actor.statusEvent().permissionMode).toBe("acceptEdits");
+	});
+
+	it("surfaces an error (no crash) when the mode change is rejected", async () => {
+		const events: BridgeEvent[] = [];
+		const actor = new SessionActor(
+			{
+				runQuery: () => ({
+					async *[Symbol.asyncIterator]() {
+						/* idle */
+					},
+					interrupt: async () => undefined,
+					setPermissionMode: async () => {
+						throw new Error("not allowed");
+					},
+				}),
+				now: () => 1,
+			},
+			{ handleId: "h", cwd: "/v", model: "m" }
+		);
+		actor.subscribe((e) => events.push(e));
+		actor.enqueue("hi"); // start so a handle exists
+		await actor.setPermissionMode("acceptEdits");
+		expect(events.some((e) => e.type === "error" && /Couldn't change mode/.test(e.message))).toBe(true);
+		expect(actor.statusEvent().permissionMode).toBe("default"); // unchanged on failure
+	});
+
 	it("emits an error event and goes idle when the query throws", async () => {
 		const events: BridgeEvent[] = [];
 		const actor = new SessionActor(
@@ -148,6 +188,7 @@ describe("SessionActor", () => {
 						throw new Error("boom");
 					},
 					interrupt: async () => undefined,
+					setPermissionMode: async () => undefined,
 				}),
 				now: () => 1,
 			},

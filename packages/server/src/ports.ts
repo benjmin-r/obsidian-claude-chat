@@ -4,7 +4,7 @@
  * `sdk-adapter.ts` (the `query()` shell) and `ws-transport.ts` (the socket).
  */
 
-import type { HistoryMessage, SdkMessage } from "@occ/protocol";
+import type { HistoryMessage, PermissionMode, SdkMessage } from "@occ/protocol";
 
 export interface PermissionAllow {
 	behavior: "allow";
@@ -28,6 +28,7 @@ export type CanUseTool = (
 export interface QueryOptions {
 	cwd: string;
 	model: string;
+	permissionMode: PermissionMode;
 	/** present only when reconstructing a session after a server restart. */
 	resume?: string;
 	canUseTool: CanUseTool;
@@ -41,9 +42,10 @@ export interface UserInputMessage {
 	session_id?: string;
 }
 
-/** The object returned by `query()`: an async iterable of SDK messages + interrupt. */
+/** The object returned by `query()`: an async iterable of SDK messages + controls. */
 export interface QueryHandle extends AsyncIterable<SdkMessage> {
 	interrupt(): Promise<void>;
+	setPermissionMode(mode: PermissionMode): Promise<void>;
 }
 
 /** Injected SDK entrypoint. Real = `sdk-adapter.runQuery`; test = a scripted generator. */

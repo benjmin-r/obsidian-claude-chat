@@ -7,6 +7,7 @@
 
 import type {
 	BridgeEvent,
+	PermissionMode,
 	PermissionRequestEvent,
 	RenderEvent,
 	SessionStatus,
@@ -45,6 +46,8 @@ export interface ChatState {
 	hasOlderHistory: boolean;
 	/** cumulative session cost in USD, if known. */
 	costUsd?: number;
+	/** the session's agent permission mode. */
+	permissionMode: PermissionMode;
 	error?: string;
 }
 
@@ -59,6 +62,7 @@ export function initialState(model: string): ChatState {
 		todos: [],
 		sessions: [],
 		hasOlderHistory: false,
+		permissionMode: "default",
 	};
 }
 
@@ -120,6 +124,7 @@ export function applyEvent(state: ChatState, event: BridgeEvent): ChatState {
 				model: event.model,
 				isWriter: event.isWriter,
 				hasOlderHistory: event.hasOlderHistory ?? state.hasOlderHistory,
+				permissionMode: event.permissionMode ?? state.permissionMode,
 				// a resolved/expired request is implied once we're no longer awaiting.
 				pendingPermission: event.status === "awaiting_permission" ? state.pendingPermission : undefined,
 			};

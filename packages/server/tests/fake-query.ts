@@ -5,7 +5,7 @@
  */
 import { AsyncInputQueue } from "../src/async-queue";
 import type { QueryHandle, QueryOptions, RunQuery, UserInputMessage } from "../src/ports";
-import type { SdkMessage } from "@occ/protocol";
+import type { PermissionMode, SdkMessage } from "@occ/protocol";
 
 export interface FakeQuery {
 	runQuery: RunQuery;
@@ -14,6 +14,7 @@ export interface FakeQuery {
 	options(): QueryOptions | undefined;
 	prompt(): AsyncIterable<UserInputMessage> | undefined;
 	interrupted(): boolean;
+	modeSet(): PermissionMode | undefined;
 }
 
 export function makeFakeQuery(): FakeQuery {
@@ -21,6 +22,7 @@ export function makeFakeQuery(): FakeQuery {
 	let captured: QueryOptions | undefined;
 	let capturedPrompt: AsyncIterable<UserInputMessage> | undefined;
 	let didInterrupt = false;
+	let lastMode: PermissionMode | undefined;
 
 	const runQuery: RunQuery = (prompt, options) => {
 		captured = options;
@@ -30,6 +32,9 @@ export function makeFakeQuery(): FakeQuery {
 			interrupt: async () => {
 				didInterrupt = true;
 				out.close();
+			},
+			setPermissionMode: async (mode) => {
+				lastMode = mode;
 			},
 		};
 		return handle;
@@ -42,6 +47,7 @@ export function makeFakeQuery(): FakeQuery {
 		options: () => captured,
 		prompt: () => capturedPrompt,
 		interrupted: () => didInterrupt,
+		modeSet: () => lastMode,
 	};
 }
 

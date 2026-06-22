@@ -256,7 +256,8 @@
 }
 
 .occ-permission {
-	border: 2px solid var(--text-error);
+	border: 1px solid var(--background-modifier-border);
+	border-left: 3px solid var(--text-accent);
 	border-radius: 8px;
 	padding: 10px;
 	margin: 4px 0;
@@ -264,24 +265,17 @@
 	display: flex;
 	flex-direction: column;
 	gap: 8px;
-	animation: occ-attn 1s ease-in-out 3;
-}
-
-@keyframes occ-attn {
-	50% {
-		box-shadow: 0 0 0 3px var(--text-error);
-	}
 }
 
 .occ-permission-head {
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	font-weight: var(--font-bold, 700);
+	font-weight: var(--font-semibold, 600);
 }
 .occ-permission-icon {
 	display: inline-flex;
-	color: var(--text-error);
+	color: var(--text-accent);
 }
 .occ-permission-input {
 	margin: 0;

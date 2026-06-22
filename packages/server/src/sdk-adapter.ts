@@ -17,7 +17,7 @@ export const runQuery: RunQuery = (prompt, options) => {
 		options: {
 			cwd: options.cwd,
 			model: options.model,
-			permissionMode: "default", // route every tool through canUseTool
+			permissionMode: options.permissionMode, // 'default' routes tools through canUseTool
 			includePartialMessages: true, // incremental text streaming
 			canUseTool: options.canUseTool as never,
 			...(options.resume ? { resume: options.resume } : {}),

@@ -167,6 +167,7 @@ describe("SessionManager", () => {
 					interrupt: async () => {
 						throw new Error("boom");
 					},
+					setPermissionMode: async () => undefined,
 				}),
 				now: () => 1,
 				newHandleId: () => "h1",

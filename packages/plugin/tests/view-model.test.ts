@@ -142,6 +142,19 @@ describe("view-model", () => {
 		expect(s.hasOlderHistory).toBe(true);
 	});
 
+	it("session_status carries the permission mode", () => {
+		const s = applyEvent(initialState("m"), {
+			type: "session_status",
+			sessionId: SID,
+			status: "idle",
+			model: "m",
+			cwd: "/v",
+			isWriter: true,
+			permissionMode: "acceptEdits",
+		});
+		expect(s.permissionMode).toBe("acceptEdits");
+	});
+
 	it("session_status carries hasOlderHistory", () => {
 		const s = applyEvent(initialState("m"), {
 			type: "session_status",

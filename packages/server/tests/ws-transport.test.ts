@@ -17,6 +17,11 @@ describe("parseClientMessage", () => {
 			type: "load_older",
 			sessionId: "s",
 		});
+		expect(parseClientMessage('{"type":"set_permission_mode","sessionId":"s","mode":"acceptEdits"}')).toEqual({
+			type: "set_permission_mode",
+			sessionId: "s",
+			mode: "acceptEdits",
+		});
 	});
 
 	it("rejects non-JSON", () => {

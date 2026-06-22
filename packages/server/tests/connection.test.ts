@@ -266,6 +266,18 @@ describe("Connection session flow", () => {
 		expect(manager.get(sessionId)).toBeDefined();
 	});
 
+	it("routes set_permission_mode to the actor", async () => {
+		const { fake, mkConn } = setup();
+		const { conn, sent } = mkConn();
+		conn.handle({ type: "hello", token: "secret" });
+		conn.handle({ type: "new_session" });
+		const sessionId = sessionIdFrom(sent);
+		conn.handle({ type: "user_message", sessionId, text: "go" }); // start the query (handle exists)
+		conn.handle({ type: "set_permission_mode", sessionId, mode: "acceptEdits" });
+		await flush();
+		expect(fake.modeSet()).toBe("acceptEdits");
+	});
+
 	it("forwards interrupt", () => {
 		const { fake, mkConn } = setup();
 		const { conn, sent } = mkConn();

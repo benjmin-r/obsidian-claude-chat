@@ -1,5 +1,5 @@
 import { App, ItemView, MarkdownRenderer, Menu, Modal, Notice, setIcon, type WorkspaceLeaf } from "obsidian";
-import type { BridgeEvent } from "@occ/protocol";
+import type { BridgeEvent, PermissionMode } from "@occ/protocol";
 import type ClaudeChatPlugin from "./main";
 import { BridgeClient, type WsLike } from "./bridge-client";
 import { MODEL_OPTIONS } from "./settings-types";
@@ -11,6 +11,12 @@ export const VIEW_TYPE_CLAUDE_CHAT = "claude-chat-view";
 const STALE_AFTER_MS = 60_000;
 /** localStorage key for the unsent input draft (survives view reloads). */
 const DRAFT_KEY = "occ-chat-draft";
+
+/** Agent permission modes offered in the toolbar picker. */
+const PERMISSION_MODES: ReadonlyArray<{ mode: PermissionMode; label: string; icon: string }> = [
+	{ mode: "default", label: "Confirm destructive actions", icon: "shield" },
+	{ mode: "acceptEdits", label: "Auto-accept edits", icon: "pencil" },
+];
 
 /** Human-friendly text for a permission request's input (the bash command, or JSON). */
 function permissionInputText(input: unknown): string {
@@ -43,7 +49,11 @@ export class ChatView extends ItemView {
 	private activityIconEl!: HTMLElement;
 	private costEl!: HTMLElement;
 	private modelLabelEl!: HTMLElement;
+	private modeBtn!: HTMLButtonElement;
 	private selectedModel: string;
+	/** desired permission mode for new sessions; applied once a session starts. */
+	private desiredMode: PermissionMode = "default";
+	private applyDesiredMode = false;
 	private messagesEl!: HTMLElement;
 	private messagesInnerEl!: HTMLElement;
 	private resizeObserver?: ResizeObserver;
@@ -135,6 +145,11 @@ export class ChatView extends ItemView {
 		modelBtn.setAttr("aria-label", "Choose the model for new sessions");
 		modelBtn.addEventListener("click", (e) => this.openModelMenu(e));
 
+		this.modeBtn = toolbar.createEl("button", { cls: "occ-tool-btn occ-mode-btn" });
+		setIcon(this.modeBtn, "shield");
+		this.modeBtn.setAttr("aria-label", "Permission mode");
+		this.modeBtn.addEventListener("click", (e) => this.openModeMenu(e));
+
 		// Right-aligned status group: cost, stop (only mid-turn), connection, activity.
 		const status = toolbar.createDiv({ cls: "occ-status" });
 		this.costEl = status.createSpan({ cls: "occ-cost" });
@@ -203,6 +218,7 @@ export class ChatView extends ItemView {
 	private startNewSession(): void {
 		this.pickerOpen = false;
 		this.stickBottom = true;
+		this.applyDesiredMode = true;
 		this.state = { ...initialState(this.selectedModel), connection: this.state.connection };
 		this.client.newSession(this.selectedModel);
 		this.render();
@@ -254,6 +270,7 @@ export class ChatView extends ItemView {
 		} else {
 			// no session yet — open one and flush the text when it is ready.
 			this.pendingText = text;
+			this.applyDesiredMode = true;
 			this.client.newSession(this.selectedModel);
 			this.state = appendUserMessage(this.state, text);
 		}
@@ -274,12 +291,20 @@ export class ChatView extends ItemView {
 				this.sessionsRefreshTimer = undefined;
 			}
 		}
-		if (event.type === "session_status" && this.pendingText && event.sessionId) {
-			this.client.userMessage(event.sessionId, this.pendingText);
-			this.pendingText = undefined;
+		if (event.type === "session_status" && event.sessionId) {
+			if (this.pendingText) {
+				this.client.userMessage(event.sessionId, this.pendingText);
+				this.pendingText = undefined;
+			}
+			// Carry the chosen permission mode into a freshly-started session.
+			if (this.applyDesiredMode) {
+				this.applyDesiredMode = false;
+				if (this.desiredMode !== "default" && this.desiredMode !== event.permissionMode) {
+					this.client.setPermissionMode(event.sessionId, this.desiredMode);
+				}
+			}
 		}
 		if (event.type === "error") new Notice(`Claude: ${event.message}`, 5000);
-		if (event.type === "permission_request") new Notice(`Claude needs permission: ${event.name}`, 6000);
 		// Alert when a turn finishes while the app isn't visible.
 		if (event.type === "done" && document.hidden) new Notice("Claude finished responding", 5000);
 		this.render();
@@ -467,6 +492,11 @@ export class ChatView extends ItemView {
 		this.costEl.setText(typeof this.state.costUsd === "number" ? `$${this.state.costUsd.toFixed(2)}` : "");
 
 		this.modelLabelEl.setText(MODEL_OPTIONS[this.selectedModel] ?? this.selectedModel);
+
+		const mode = (this.state.sessionId ? this.state.permissionMode : this.desiredMode) ?? "default";
+		const modeMeta = PERMISSION_MODES.find((m) => m.mode === mode) ?? PERMISSION_MODES[0]!;
+		setIcon(this.modeBtn, modeMeta.icon);
+		this.modeBtn.setAttr("aria-label", `Permission: ${modeMeta.label}`);
 	}
 
 	private openModelMenu(evt: MouseEvent): void {
@@ -479,6 +509,24 @@ export class ChatView extends ItemView {
 					.onClick(() => {
 						this.selectedModel = value;
 						this.modelLabelEl.setText(label);
+					})
+			);
+		}
+		menu.showAtMouseEvent(evt);
+	}
+
+	private openModeMenu(evt: MouseEvent): void {
+		const current = (this.state.sessionId ? this.state.permissionMode : this.desiredMode) ?? "default";
+		const menu = new Menu();
+		for (const m of PERMISSION_MODES) {
+			menu.addItem((item) =>
+				item
+					.setTitle(m.label)
+					.setChecked(m.mode === current)
+					.onClick(() => {
+						this.desiredMode = m.mode;
+						if (this.state.sessionId) this.client.setPermissionMode(this.state.sessionId, m.mode);
+						this.render();
 					})
 			);
 		}

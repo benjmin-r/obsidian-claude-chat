@@ -5,7 +5,7 @@
  * network and no timers.
  */
 
-import type { BridgeEvent, ClientMessage } from "@occ/protocol";
+import type { BridgeEvent, ClientMessage, PermissionMode } from "@occ/protocol";
 
 export interface WsLike {
 	send(data: string): void;
@@ -97,6 +97,10 @@ export class BridgeClient {
 
 	loadOlder(sessionId: string): void {
 		this.send({ type: "load_older", sessionId });
+	}
+
+	setPermissionMode(sessionId: string, mode: PermissionMode): void {
+		this.send({ type: "set_permission_mode", sessionId, mode });
 	}
 
 	userMessage(sessionId: string, text: string): void {

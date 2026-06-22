@@ -13,6 +13,14 @@ export const PROTOCOL_VERSION = 1;
 /** Lifecycle state of a server-owned session actor. */
 export type SessionStatus = "idle" | "working" | "awaiting_permission";
 
+/**
+ * Agent permission modes we expose. Limited to the modes that are safe to switch
+ * at runtime: 'bypassPermissions'/'plan' aren't here because bypass requires the
+ * session to be launched with --dangerously-skip-permissions, and plan needs
+ * exit-plan handling we don't have yet.
+ */
+export type PermissionMode = "default" | "acceptEdits";
+
 /** A single TodoWrite item, as surfaced to the plugin's todo list. */
 export interface TodoItem {
 	content: string;
@@ -133,6 +141,8 @@ export interface SessionStatusEvent {
 	isWriter: boolean;
 	/** true if older history exists beyond what was sent on attach. */
 	hasOlderHistory?: boolean;
+	/** the session's current agent permission mode. */
+	permissionMode?: PermissionMode;
 }
 
 /** A batch of older transcript events to PREPEND (reply to `load_older`). */
@@ -232,6 +242,13 @@ export interface DeleteSessionMessage {
 	sessionId: string;
 }
 
+/** Change the agent permission mode for a session. */
+export interface SetPermissionModeMessage {
+	type: "set_permission_mode";
+	sessionId: string;
+	mode: PermissionMode;
+}
+
 /** Request the next older page of a resumed session's transcript. */
 export interface LoadOlderMessage {
 	type: "load_older";
@@ -253,5 +270,6 @@ export type ClientMessage =
 	| ResumeSessionMessage
 	| RenameSessionMessage
 	| DeleteSessionMessage
+	| SetPermissionModeMessage
 	| LoadOlderMessage
 	| ListSessionsMessage;

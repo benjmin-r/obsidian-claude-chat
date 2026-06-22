@@ -21,6 +21,7 @@ const CLIENT_MESSAGE_TYPES = new Set([
 	"rename_session",
 	"delete_session",
 	"load_older",
+	"set_permission_mode",
 	"list_sessions",
 ]);
 

@@ -97,6 +97,9 @@ export class Connection {
 					this.deps.send({ type: "history_page", sessionId: actor.id, events, hasMore });
 				});
 				return {};
+			case "set_permission_mode":
+				this.withActor(msg.sessionId, (actor) => void actor.setPermissionMode(msg.mode));
+				return {};
 			case "list_sessions":
 				this.deps.manager
 					.listSummaries()
