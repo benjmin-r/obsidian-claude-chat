@@ -10,14 +10,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {
-	deleteSession,
-	getSessionInfo,
-	getSessionMessages,
-	listSessions,
-	query,
-	renameSession,
-} from "@anthropic-ai/claude-agent-sdk";
+import { deleteSession, getSessionMessages, listSessions, query, renameSession } from "@anthropic-ai/claude-agent-sdk";
 import { classifyHolders, isDescendant, parseEntry, type RegistryEntry } from "./external-activity";
 import type {
 	DeleteStored,
@@ -26,7 +19,6 @@ import type {
 	LoadHistory,
 	RenameStored,
 	RunQuery,
-	SessionLastModified,
 } from "./ports";
 
 export const runQuery: RunQuery = (prompt, options) => {
@@ -66,16 +58,6 @@ export const renameStored: RenameStored = (cwd, sessionId, title) => renameSessi
 
 /** Permanently delete a persisted session from the store. */
 export const deleteStored: DeleteStored = (cwd, sessionId) => deleteSession(sessionId, { dir: cwd });
-
-/** On-disk last-modified time of a session (used to detect external edits). */
-export const sessionLastModified: SessionLastModified = async (cwd, sessionId) => {
-	try {
-		const info = await getSessionInfo(sessionId, { dir: cwd });
-		return info?.lastModified;
-	} catch {
-		return undefined;
-	}
-};
 
 const SESSIONS_DIR = path.join(os.homedir(), ".claude", "sessions");
 

@@ -103,8 +103,13 @@ export class BridgeClient {
 		this.send({ type: "set_permission_mode", sessionId, mode });
 	}
 
-	userMessage(sessionId: string, text: string, force = false): void {
-		this.send({ type: "user_message", sessionId, text, ...(force ? { force: true } : {}) });
+	userMessage(sessionId: string, text: string): void {
+		this.send({ type: "user_message", sessionId, text });
+	}
+
+	/** Detach + release the session server-side (clean CLI hand-off). */
+	closeSession(sessionId: string): void {
+		this.send({ type: "close_session", sessionId });
 	}
 
 	decide(sessionId: string, toolUseId: string, allow: boolean, message?: string): void {

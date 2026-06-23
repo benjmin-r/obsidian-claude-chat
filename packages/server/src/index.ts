@@ -4,15 +4,7 @@
  */
 
 import { loadConfig } from "./config";
-import {
-	deleteStored,
-	detectExternalActivity,
-	listStored,
-	loadHistory,
-	renameStored,
-	runQuery,
-	sessionLastModified,
-} from "./sdk-adapter";
+import { deleteStored, detectExternalActivity, listStored, loadHistory, renameStored, runQuery } from "./sdk-adapter";
 import { SessionManager } from "./session-manager";
 import { startTransport } from "./ws-transport";
 
@@ -30,15 +22,15 @@ function main(): void {
 			renameStored,
 			deleteStored,
 			detectExternalActivity,
-			sessionLastModified,
 		},
 		{ cwd: config.vaultCwd, defaultModel: config.defaultModel, bufferLimit: config.bufferLimit }
 	);
 
 	const transport = startTransport(config, manager);
 
-	// Proactively surface external activity + staleness to attached clients.
-	const poll = setInterval(() => manager.pollExternalActivity(), 3000);
+	// Proactively surface CLI activity (read-only) to attached clients. Lightweight
+	// (a small registry read per loaded session), so we poll snappily.
+	const poll = setInterval(() => manager.pollExternalActivity(), 1500);
 	poll.unref();
 
 	// Release idle, detached sessions after 5 min so we stop being a writer the

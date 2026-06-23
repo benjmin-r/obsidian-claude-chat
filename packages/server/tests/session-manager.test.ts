@@ -1,13 +1,6 @@
 import type { BridgeEvent } from "@occ/protocol";
 import { SessionManager } from "../src/session-manager";
-import type {
-	DeleteStored,
-	DetectExternalActivity,
-	ListStored,
-	LoadHistory,
-	RenameStored,
-	SessionLastModified,
-} from "../src/ports";
+import type { DeleteStored, DetectExternalActivity, ListStored, LoadHistory, RenameStored } from "../src/ports";
 import { flush, makeFakeQuery } from "./fake-query";
 
 function makeManager(
@@ -17,7 +10,6 @@ function makeManager(
 		renameStored?: RenameStored;
 		deleteStored?: DeleteStored;
 		detectExternalActivity?: DetectExternalActivity;
-		sessionLastModified?: SessionLastModified;
 		now?: () => number;
 	} = {}
 ) {
@@ -33,7 +25,6 @@ function makeManager(
 			renameStored: opts.renameStored ?? (async () => undefined),
 			deleteStored: opts.deleteStored ?? (async () => undefined),
 			detectExternalActivity: opts.detectExternalActivity,
-			sessionLastModified: opts.sessionLastModified,
 		},
 		{ cwd: "/v", defaultModel: "claude-opus-4-8" }
 	);
@@ -72,66 +63,47 @@ describe("SessionManager", () => {
 		expect(manager.get("old-session")).toBe(reconstructed);
 	});
 
-	const MSG = { type: "user", message: { content: "hi" } };
-
-	it("poll flags stale when the on-disk conversation grew — even with a live holder", async () => {
-		let msgs = [MSG, MSG];
-		let mtime = 100;
+	it("poll surfaces CLI activity (read-only) to attached, identified sessions", async () => {
 		const { manager } = makeManager({
 			detectExternalActivity: () => ({ severity: "busy", pid: 5, entrypoint: "cli" }),
-			sessionLastModified: async () => mtime,
-			loadHistory: async () => msgs as never,
 		});
-		const actor = await manager.resumeWithHistory("sess-1"); // baseline = 2 messages
+		const actor = await manager.resumeWithHistory("sess-1");
 		const events: BridgeEvent[] = [];
 		actor.subscribe((e) => events.push(e));
-		msgs = [MSG, MSG, MSG, MSG]; // a foreign turn was appended
-		mtime = 200;
 		manager.pollExternalActivity();
-		await flush();
 		expect(events.some((e) => e.type === "external_activity" && e.severity === "busy")).toBe(true);
-		expect(events.some((e) => e.type === "session_stale" && e.stale === true)).toBe(true);
 	});
 
-	it("poll does NOT flag stale when only metadata changed (message count unchanged)", async () => {
-		let msgs = [MSG, MSG];
-		let mtime = 100;
+	it("resumeWithHistory checks CLI activity immediately so attach reflects read-only at once", async () => {
 		const { manager } = makeManager({
-			detectExternalActivity: () => ({ severity: "idle" }), // a CLI is open but added no turn
-			sessionLastModified: async () => mtime,
-			loadHistory: async () => msgs as never,
+			detectExternalActivity: () => ({ severity: "busy", pid: 5, entrypoint: "cli" }),
 		});
-		const actor = await manager.resumeWithHistory("sess-1"); // baseline = 2
-		const events: BridgeEvent[] = [];
-		actor.subscribe((e) => events.push(e));
-		mtime = 200; // file changed (metadata) but no new conversation
-		manager.pollExternalActivity();
-		await flush();
-		expect(events.some((e) => e.type === "external_activity" && e.severity === "idle")).toBe(true);
-		expect(events.some((e) => e.type === "session_stale" && e.stale === true)).toBe(false);
+		const actor = await manager.resumeWithHistory("sess-1");
+		expect(actor.externalActivity.severity).toBe("busy"); // set before any poll
 	});
 
-	it("re-baselines after our own turn so our own writes aren't flagged stale", async () => {
-		let msgs = [MSG, MSG];
-		let mtime = 100;
-		const { fake, manager } = makeManager({
-			sessionLastModified: async () => mtime,
-			loadHistory: async () => msgs as never,
-		});
-		const actor = await manager.resumeWithHistory("sess-1"); // baseline = 2
-		msgs = [MSG, MSG, MSG, MSG]; // our turn appends to disk
-		mtime = 200;
-		actor.enqueue("go");
-		fake.emit({ type: "result", subtype: "success", is_error: false }); // our turn done
-		await flush();
-		await flush();
-		expect(actor.msgBaseline).toBe(4); // re-counted on done
-		const events: BridgeEvent[] = [];
-		actor.subscribe((e) => events.push(e));
-		mtime = 201;
-		manager.pollExternalActivity();
-		await flush();
-		expect(events.some((e) => e.type === "session_stale" && e.stale === true)).toBe(false);
+	it("sendGate blocks when a CLI holds the session, allows otherwise", async () => {
+		let severity: "none" | "busy" | "idle" = "busy";
+		const { manager } = makeManager({ detectExternalActivity: () => ({ severity }) });
+		const actor = await manager.resumeWithHistory("sess-1");
+		expect(await manager.sendGate(actor)).toBe("external");
+		severity = "none";
+		expect(await manager.sendGate(actor)).toBe("ok");
+	});
+
+	it("releaseSession drops an idle, unlistened actor (clean hand-off)", async () => {
+		const { manager } = makeManager();
+		const actor = await manager.resumeWithHistory("sess-1"); // idle, no client listener
+		manager.releaseSession("sess-1");
+		expect(manager.get("sess-1")).toBeUndefined();
+	});
+
+	it("releaseSession keeps a still-listened session", async () => {
+		const { manager } = makeManager();
+		const actor = await manager.resumeWithHistory("sess-1");
+		actor.subscribe(() => undefined); // a client is attached
+		manager.releaseSession("sess-1");
+		expect(manager.get("sess-1")).toBe(actor);
 	});
 
 	it("pollExternalActivity skips sessions with no listeners or no sdk id", () => {

@@ -47,8 +47,6 @@ export class ChatView extends ItemView {
 	private pendingText: string | undefined;
 	/** last text dispatched to the server; used to roll back if the server blocks it. */
 	private lastSentText: string | undefined;
-	/** one-shot emphasis on the activity banner after a blocked send. */
-	private bannerFlash = false;
 
 	private connIconEl!: HTMLElement;
 	private activityIconEl!: HTMLElement;
@@ -262,42 +260,38 @@ export class ChatView extends ItemView {
 		}, 5000);
 	}
 
-	private resumeSession(sessionId: string, title?: string, reload = false): void {
+	/**
+	 * Open a session — ALWAYS reloads from disk (drops any cached actor) so the plugin
+	 * shows current content; the re-attach re-checks CLI activity. Used by the picker
+	 * and the read-only banner's Reload button.
+	 */
+	private resumeSession(sessionId: string, title?: string): void {
 		this.pickerOpen = false;
 		this.pendingText = undefined;
 		this.stickBottom = true; // switching in should always land at the bottom
-		this.currentTitle = reload ? this.currentTitle : title;
+		this.currentTitle = title ?? this.currentTitle;
 		this.updateTabTitle();
 		// Clear the current transcript; the resumed session's history replays in.
 		this.state = { ...initialState(this.selectedModel), connection: this.state.connection };
-		this.client.resumeSession(sessionId, reload);
+		this.client.resumeSession(sessionId, /* reload */ true);
 		this.render();
 	}
 
 	private sendCurrent(): void {
 		const text = this.inputEl.value.trim();
 		if (!text) return;
-		// Gate against staleness / external activity (the server enforces this too).
-		if (this.state.sessionId) {
-			if (this.state.stale) {
-				this.flashBanner(); // the warning banner is the feedback; keep the draft
-				return;
-			}
-			if (this.state.externalActivity !== "none") {
-				this.confirmSendAnyway(text);
-				return;
-			}
-		}
-		this.dispatchSend(text, false);
+		// Read-only while a CLI holds the session (Send is disabled too — belt and braces).
+		if (this.state.sessionId && this.state.externalActivity !== "none") return;
+		this.dispatchSend(text);
 	}
 
-	private dispatchSend(text: string, force: boolean): void {
+	private dispatchSend(text: string): void {
 		this.inputEl.value = "";
 		window.localStorage.removeItem(this.draftKey());
 		this.stickBottom = true; // following our own new message
 		if (this.state.sessionId) {
 			this.lastSentText = text;
-			this.client.userMessage(this.state.sessionId, text, force);
+			this.client.userMessage(this.state.sessionId, text);
 			this.state = appendUserMessage(this.state, text);
 		} else {
 			// no session yet — open one and flush the text when it is ready.
@@ -309,20 +303,8 @@ export class ChatView extends ItemView {
 		this.render();
 	}
 
-	private confirmSendAnyway(text: string): void {
-		const busy = this.state.externalActivity === "busy";
-		const where = busy ? "is being used in a terminal right now" : "is also open in a terminal";
-		new ConfirmModal(
-			this.app,
-			"Send anyway?",
-			`This session ${where}. Sending may conflict with the other session.`,
-			"⚠️ Send anyway",
-			() => this.dispatchSend(text, true)
-		).open();
-	}
-
-	/** A send our local gate allowed but the server refused (a race): roll back + restore. */
-	private restoreBlockedDraft(reason: "stale" | "external_busy" | "external_idle"): void {
+	/** Server refused a send (a CLI grabbed the session in the gap): roll back + restore. */
+	private restoreBlockedDraft(): void {
 		if (this.lastSentText !== undefined) {
 			const items = this.state.items;
 			const last = items[items.length - 1];
@@ -333,8 +315,7 @@ export class ChatView extends ItemView {
 			window.localStorage.setItem(this.draftKey(), this.lastSentText);
 			this.lastSentText = undefined;
 		}
-		if (reason === "stale") this.flashBanner();
-		else new Notice("Message not sent — this session is open in a terminal. Use 'Send anyway' to override.", 6000);
+		new Notice("Not sent — this session is open in a terminal (read-only).", 5000);
 		this.render();
 	}
 
@@ -347,7 +328,7 @@ export class ChatView extends ItemView {
 	private onEvent(event: BridgeEvent): void {
 		this.state = applyEvent(this.state, event);
 		if (event.type === "send_blocked") {
-			this.restoreBlockedDraft(event.reason);
+			this.restoreBlockedDraft();
 			return; // restoreBlockedDraft re-renders
 		}
 		if (event.type === "history_page") {
@@ -490,11 +471,27 @@ export class ChatView extends ItemView {
 			i
 				.setTitle("Copy shell resume command")
 				.setIcon("terminal")
-				.onClick(() => this.copyToClipboard(`claude --resume ${sessionId}`))
+				.onClick(() => {
+					this.copyToClipboard(`claude --resume ${sessionId}`);
+					this.closeCurrentSession(); // hand off to the terminal: return to empty state
+				})
 		);
 		menu.addItem((i) => i.setTitle("Rename…").setIcon("pencil").onClick(() => this.openRename(sessionId, currentTitle)));
 		menu.addItem((i) => i.setTitle("Delete…").setIcon("trash-2").onClick(() => this.confirmDelete(sessionId, label)));
 		menu.showAtMouseEvent(evt);
+	}
+
+	/** Detach from the loaded session (back to empty state) and release it server-side. */
+	private closeCurrentSession(): void {
+		this.pickerOpen = false;
+		const sid = this.state.sessionId;
+		if (sid) this.client.closeSession(sid);
+		this.client.setAttachTarget(undefined); // don't re-attach on reconnect
+		this.pendingText = undefined;
+		this.currentTitle = undefined;
+		this.updateTabTitle();
+		this.state = { ...initialState(this.selectedModel), connection: this.state.connection };
+		this.render();
 	}
 
 	private confirmDelete(sessionId: string, label: string): void {
@@ -571,6 +568,12 @@ export class ChatView extends ItemView {
 		this.sendBtn.setText(working ? "Stop" : "Send");
 		this.sendBtn.classList.toggle("mod-warning", working);
 		this.sendBtn.classList.toggle("mod-cta", !working);
+
+		// Read-only while a CLI holds the session: lock the composer (Stop stays usable).
+		const readOnly = !!this.state.sessionId && this.state.externalActivity !== "none";
+		this.inputEl.disabled = readOnly;
+		this.inputEl.placeholder = readOnly ? "Read-only — open in a terminal" : "Message Claude…";
+		this.sendBtn.disabled = readOnly && !working;
 
 		this.costEl.setText(typeof this.state.costUsd === "number" ? `$${this.state.costUsd.toFixed(2)}` : "");
 
@@ -735,42 +738,20 @@ export class ChatView extends ItemView {
 		allow.addEventListener("click", () => this.decide(req.toolUseId, true));
 	}
 
-	/** Banner for staleness / external activity. Stale takes precedence (it's the binding gate). */
+	/** Read-only banner: the session is open in a live external (CLI) process. */
 	private renderActivityBanner(): void {
 		this.activityBannerEl.empty();
-		const { stale, externalActivity } = this.state;
-		if (!stale && externalActivity === "none") return;
-		const box = this.activityBannerEl.createDiv({ cls: "occ-activity" });
-		if (this.bannerFlash) box.addClass("occ-activity-flash");
+		if (!this.state.sessionId || this.state.externalActivity === "none") return;
+		const box = this.activityBannerEl.createDiv({ cls: "occ-activity occ-activity-readonly" });
 		const head = box.createDiv({ cls: "occ-activity-head" });
-
-		if (stale) {
-			box.addClass("occ-activity-stale");
-			setIcon(head.createSpan({ cls: "occ-activity-icon" }), "alert-triangle");
-			head.createSpan({ text: "This session changed in a terminal — reload to review before sending." });
-			const buttons = box.createDiv({ cls: "occ-activity-buttons" });
-			const reload = buttons.createEl("button", { text: "Reload", cls: "mod-cta" });
-			reload.addEventListener("click", () => {
-				if (this.state.sessionId) this.resumeSession(this.state.sessionId, this.currentTitle, true);
-			});
-			return;
-		}
-
-		const busy = externalActivity === "busy";
-		box.addClass(busy ? "occ-activity-busy" : "occ-activity-idle");
+		setIcon(head.createSpan({ cls: "occ-activity-icon" }), "lock");
 		const who = this.state.externalEntrypoint ? ` (${this.state.externalEntrypoint})` : "";
-		setIcon(head.createSpan({ cls: "occ-activity-icon" }), busy ? "alert-triangle" : "users");
-		head.createSpan({ text: busy ? `Active in a terminal right now${who}.` : `Also open in a terminal${who}.` });
-	}
-
-	/** One-shot emphasis on the activity banner (feedback when a send is blocked). */
-	private flashBanner(): void {
-		this.bannerFlash = true;
-		this.renderActivityBanner();
-		window.setTimeout(() => {
-			this.bannerFlash = false;
-			this.renderActivityBanner();
-		}, 450);
+		head.createSpan({ text: `Open in a terminal${who} — read-only. Reload to refresh / regain control.` });
+		const buttons = box.createDiv({ cls: "occ-activity-buttons" });
+		const reload = buttons.createEl("button", { text: "Reload", cls: "mod-cta" });
+		reload.addEventListener("click", () => {
+			if (this.state.sessionId) this.resumeSession(this.state.sessionId, this.currentTitle);
+		});
 	}
 }
 

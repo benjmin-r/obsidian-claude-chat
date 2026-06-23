@@ -168,18 +168,11 @@ export interface ExternalActivityEvent {
 	pid?: number;
 }
 
-/** The on-disk transcript has advanced past what this server's actor holds. */
-export interface SessionStaleEvent {
-	type: "session_stale";
-	sessionId: string;
-	stale: boolean;
-}
-
-/** A user turn was refused by the send guard (stale, or externally active without override). */
+/** A user turn was refused: the session is open in a live external process (read-only). */
 export interface SendBlockedEvent {
 	type: "send_blocked";
 	sessionId: string;
-	reason: "stale" | "external_busy" | "external_idle";
+	reason: "external";
 }
 
 /** A batch of older transcript events to PREPEND (reply to `load_older`). */
@@ -208,7 +201,6 @@ export type BridgeEvent =
 	| SessionStatusEvent
 	| AttachResetEvent
 	| ExternalActivityEvent
-	| SessionStaleEvent
 	| SendBlockedEvent
 	| HistoryPageEvent;
 
@@ -240,8 +232,6 @@ export interface UserMessageMessage {
 	type: "user_message";
 	sessionId: string;
 	text: string;
-	/** override the external-activity send guard (never overrides staleness). */
-	force?: boolean;
 }
 
 /** Resolution of a pending `permission_request`. */
@@ -287,6 +277,12 @@ export interface DeleteSessionMessage {
 	sessionId: string;
 }
 
+/** Detach from a session and release the server-side actor (clean CLI hand-off). */
+export interface CloseSessionMessage {
+	type: "close_session";
+	sessionId: string;
+}
+
 /** Change the agent permission mode for a session. */
 export interface SetPermissionModeMessage {
 	type: "set_permission_mode";
@@ -315,6 +311,7 @@ export type ClientMessage =
 	| ResumeSessionMessage
 	| RenameSessionMessage
 	| DeleteSessionMessage
+	| CloseSessionMessage
 	| SetPermissionModeMessage
 	| LoadOlderMessage
 	| ListSessionsMessage;

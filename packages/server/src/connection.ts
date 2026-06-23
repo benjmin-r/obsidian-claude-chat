@@ -71,7 +71,7 @@ export class Connection {
 		}
 		switch (msg.type) {
 			case "user_message":
-				this.onUserMessage(msg.sessionId, msg.text, msg.force ?? false);
+				this.onUserMessage(msg.sessionId, msg.text);
 				return {};
 			case "permission_decision":
 				this.withActor(msg.sessionId, (a) => a.decidePermission(msg.toolUseId, msg.allow, msg.message));
@@ -90,6 +90,11 @@ export class Connection {
 				return {};
 			case "delete_session":
 				this.onDelete(msg.sessionId);
+				return {};
+			case "close_session":
+				// Detach + release for a clean CLI hand-off (does NOT delete the store).
+				if (this.attached?.actor.id === msg.sessionId) this.detach();
+				this.deps.manager.releaseSession(msg.sessionId);
 				return {};
 			case "load_older":
 				this.withActor(msg.sessionId, (actor) => {
@@ -133,7 +138,7 @@ export class Connection {
 		return {};
 	}
 
-	private onUserMessage(sessionId: string, text: string, force: boolean): void {
+	private onUserMessage(sessionId: string, text: string): void {
 		this.withActor(sessionId, (actor) => {
 			if (this.attached?.actor !== actor) this.attach(actor);
 			if (!this.deps.writers.claim(actor, this)) {
@@ -144,26 +149,20 @@ export class Connection {
 				});
 				return;
 			}
-			// A brand-new session (no SDK id yet) has nothing on disk to conflict with;
-			// enqueue synchronously so it starts immediately. Identified sessions go
-			// through the async guard.
+			// A brand-new session (no SDK id yet) can't be open elsewhere; enqueue
+			// synchronously. Identified sessions go through the read-only guard.
 			if (!actor.sdkSessionId) {
 				actor.enqueue(text);
 				return;
 			}
-			void this.guardedEnqueue(actor, text, force);
+			void this.guardedEnqueue(actor, text);
 		});
 	}
 
-	/** Refuse a turn that would read stale context or fight a concurrent writer. */
-	private async guardedEnqueue(actor: SessionActor, text: string, force: boolean): Promise<void> {
-		const gate = await this.deps.manager.sendGate(actor);
-		if (gate === "stale") {
-			this.deps.send({ type: "send_blocked", sessionId: actor.id, reason: "stale" });
-			return;
-		}
-		if ((gate === "external_busy" || gate === "external_idle") && !force) {
-			this.deps.send({ type: "send_blocked", sessionId: actor.id, reason: gate });
+	/** Refuse a turn while the session is open in a live external (CLI) process. */
+	private async guardedEnqueue(actor: SessionActor, text: string): Promise<void> {
+		if ((await this.deps.manager.sendGate(actor)) === "external") {
+			this.deps.send({ type: "send_blocked", sessionId: actor.id, reason: "external" });
 			return;
 		}
 		actor.enqueue(text);

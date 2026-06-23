@@ -72,13 +72,6 @@ export class SessionActor {
 	private _status: SessionStatus = "idle";
 	private _permissionMode: PermissionMode = "default";
 	private _external: ExternalActivity = { severity: "none" };
-	private _stale = false;
-	/** conversation-message count we've accounted for; staleness = on-disk count exceeds it. */
-	private _msgBaseline = 0;
-	/** file mtime at our last staleness count — a cheap gate to avoid re-parsing. */
-	private _lastSeenMtime = 0;
-	/** true while the manager is re-counting after one of our own turns. */
-	private _rebaselining = false;
 	private _sdkSessionId: string | undefined;
 	private _updatedAt: number;
 	private _messageCount = 0;
@@ -115,22 +108,6 @@ export class SessionActor {
 
 	get externalActivity(): ExternalActivity {
 		return this._external;
-	}
-
-	get stale(): boolean {
-		return this._stale;
-	}
-
-	get msgBaseline(): number {
-		return this._msgBaseline;
-	}
-
-	get lastSeenMtime(): number {
-		return this._lastSeenMtime;
-	}
-
-	get rebaselining(): boolean {
-		return this._rebaselining;
 	}
 
 	get listenerCount(): number {
@@ -215,31 +192,6 @@ export class SessionActor {
 		});
 	}
 
-	/** Flag/clear staleness (on-disk advanced past us); broadcast on change. */
-	setStale(stale: boolean): void {
-		if (stale === this._stale) return;
-		this._stale = stale;
-		this.broadcast({ type: "session_stale", sessionId: this.id, stale });
-	}
-
-	/** Set the staleness baseline (conversation-message count + the mtime then). */
-	markBaseline(count: number, mtime: number): void {
-		this._msgBaseline = count;
-		this._lastSeenMtime = mtime;
-	}
-
-	setLastSeenMtime(mtime: number): void {
-		this._lastSeenMtime = mtime;
-	}
-
-	beginRebaseline(): void {
-		this._rebaselining = true;
-	}
-
-	endRebaseline(): void {
-		this._rebaselining = false;
-	}
-
 	/** Resolve a pending destructive-tool permission request. */
 	decidePermission(toolUseId: string, allow: boolean, message?: string): void {
 		const resolve = this.pendingPermissions.get(toolUseId);
@@ -276,7 +228,6 @@ export class SessionActor {
 				pid: this._external.pid,
 			});
 		}
-		if (this._stale) listener({ type: "session_stale", sessionId: this.id, stale: true });
 		this.listeners.add(listener);
 		if (!opts?.internal) this._clientListeners += 1;
 		return () => {
@@ -367,7 +318,6 @@ export class SessionActor {
 					this.record(event);
 				}
 				if (msg.type === "result") {
-					this._stale = false; // our own turn just landed (the manager re-counts the baseline)
 					this.setStatus("idle");
 				}
 			}

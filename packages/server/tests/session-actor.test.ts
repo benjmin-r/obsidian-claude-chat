@@ -150,32 +150,6 @@ describe("SessionActor", () => {
 		expect(late.some((e) => e.type === "external_activity" && e.severity === "busy")).toBe(true);
 	});
 
-	it("broadcasts staleness on change and re-emits on attach", () => {
-		const { actor } = makeActor();
-		const events = collect(actor);
-		actor.setStale(true);
-		expect(events.some((e) => e.type === "session_stale" && e.stale === true)).toBe(true);
-		const late = collect(actor);
-		expect(late.some((e) => e.type === "session_stale" && e.stale === true)).toBe(true);
-	});
-
-	it("clears staleness when our own turn completes", async () => {
-		const { fake, actor } = makeActor();
-		actor.setStale(true);
-		actor.enqueue("hi");
-		fake.emit({ type: "result", subtype: "success", is_error: false });
-		await flush();
-		expect(actor.stale).toBe(false);
-	});
-
-	it("tracks the staleness baseline", () => {
-		const { actor } = makeActor();
-		expect(actor.msgBaseline).toBe(0);
-		actor.markBaseline(5, 123);
-		expect(actor.msgBaseline).toBe(5);
-		expect(actor.lastSeenMtime).toBe(123);
-	});
-
 	it("tracks listenerCount", () => {
 		const { actor } = makeActor();
 		expect(actor.listenerCount).toBe(0);

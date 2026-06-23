@@ -20,6 +20,7 @@ const CLIENT_MESSAGE_TYPES = new Set([
 	"resume_session",
 	"rename_session",
 	"delete_session",
+	"close_session",
 	"load_older",
 	"set_permission_mode",
 	"list_sessions",

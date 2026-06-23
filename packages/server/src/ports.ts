@@ -80,6 +80,3 @@ export type DeleteStored = (cwd: string, sessionId: string) => Promise<void>;
  * returns `{ severity: "none" }` if the registry is missing/unreadable.
  */
 export type DetectExternalActivity = (cwd: string, sessionId: string) => ExternalActivity;
-
-/** The on-disk last-modified epoch ms of a session, or undefined (real = SDK `getSessionInfo`). */
-export type SessionLastModified = (cwd: string, sessionId: string) => Promise<number | undefined>;

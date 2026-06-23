@@ -278,10 +278,8 @@ describe("Connection session flow", () => {
 		expect(fake.modeSet()).toBe("acceptEdits");
 	});
 
-	it("guards sends: external is overridable; a grown (stale) transcript is not", async () => {
-		const MSG = { type: "user", message: { content: "x" } };
-		let msgs: unknown[] = [MSG, MSG];
-		let severity: ExternalSeverity = "none";
+	it("blocks a send (read-only) while a CLI holds the session; allows when none", async () => {
+		let severity: ExternalSeverity = "busy";
 		const fake = makeFakeQuery();
 		let n = 0;
 		const manager = new SessionManager(
@@ -290,11 +288,10 @@ describe("Connection session flow", () => {
 				now: () => 1,
 				newHandleId: () => `h${(n += 1)}`,
 				listStored: async () => [],
-				loadHistory: async () => msgs as never,
+				loadHistory: async () => [],
 				renameStored: async () => undefined,
 				deleteStored: async () => undefined,
 				detectExternalActivity: () => ({ severity }),
-				sessionLastModified: async () => 100,
 			},
 			{ cwd: "/v", defaultModel: "m" }
 		);
@@ -302,29 +299,36 @@ describe("Connection session flow", () => {
 		const sent: BridgeEvent[] = [];
 		const conn = new Connection({ manager, token: "secret", writers, send: (e) => sent.push(e) });
 		conn.handle({ type: "hello", token: "secret" });
-		conn.handle({ type: "resume_session", sessionId: "sess-1" }); // baseline = 2 messages
+		conn.handle({ type: "resume_session", sessionId: "sess-1" });
 		await flush();
 		await flush();
 
-		// externally busy, conversation unchanged → blocked, but overridable.
-		severity = "busy";
+		// CLI is live → blocked, no override, never enqueued.
 		sent.length = 0;
 		conn.handle({ type: "user_message", sessionId: "sess-1", text: "a" });
 		await flush();
-		expect(sent.some((e) => e.type === "send_blocked" && e.reason === "external_busy")).toBe(true);
-		expect(fake.options()).toBeUndefined(); // not enqueued
+		expect(sent.some((e) => e.type === "send_blocked" && e.reason === "external")).toBe(true);
+		expect(fake.options()).toBeUndefined();
 
-		conn.handle({ type: "user_message", sessionId: "sess-1", text: "a", force: true });
-		await flush();
-		expect(fake.options()).toBeDefined(); // override → enqueued
-
-		// a foreign turn was appended → stale, NOT overridable even with force.
+		// CLI gone → send goes through.
 		severity = "none";
-		msgs = [MSG, MSG, MSG, MSG];
-		sent.length = 0;
-		conn.handle({ type: "user_message", sessionId: "sess-1", text: "b", force: true });
+		conn.handle({ type: "user_message", sessionId: "sess-1", text: "a" });
 		await flush();
-		expect(sent.some((e) => e.type === "send_blocked" && e.reason === "stale")).toBe(true);
+		expect(fake.options()).toBeDefined();
+	});
+
+	it("close_session detaches and releases the (idle, unlistened) actor", async () => {
+		const { mkConn } = setup();
+		const { conn, sent } = mkConn();
+		conn.handle({ type: "hello", token: "secret" });
+		conn.handle({ type: "resume_session", sessionId: "sess-1" });
+		await flush();
+		await flush();
+		conn.handle({ type: "close_session", sessionId: "sess-1" });
+		expect(sent.some((e) => e.type === "error")).toBe(false);
+		// the actor is released → a fresh lookup must not find it
+		conn.handle({ type: "user_message", sessionId: "sess-1", text: "hi" });
+		expect(sent.some((e) => e.type === "error" && /No such session/.test(e.message))).toBe(true);
 	});
 
 	it("forwards interrupt", () => {

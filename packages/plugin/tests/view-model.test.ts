@@ -158,17 +158,16 @@ describe("view-model", () => {
 	it("attach_reset clears the transcript so the replay rebuilds it", () => {
 		let s = reduce([
 			{ type: "assistant_text_delta", sessionId: SID, text: "old" },
-			{ type: "session_stale", sessionId: SID, stale: true },
+			{ type: "external_activity", sessionId: SID, severity: "busy", entrypoint: "cli" },
 		]);
 		expect(s.items.length).toBe(1);
 		s = applyEvent(s, { type: "attach_reset", sessionId: SID });
 		expect(s.items).toEqual([]);
-		expect(s.stale).toBe(false);
 		expect(s.externalActivity).toBe("none");
 	});
 
-	it("tracks external activity and staleness", () => {
-		let s = applyEvent(initialState("m"), {
+	it("tracks external activity (read-only)", () => {
+		const s = applyEvent(initialState("m"), {
 			type: "external_activity",
 			sessionId: SID,
 			severity: "busy",
@@ -177,8 +176,6 @@ describe("view-model", () => {
 		});
 		expect(s.externalActivity).toBe("busy");
 		expect(s.externalEntrypoint).toBe("cli");
-		s = applyEvent(s, { type: "session_stale", sessionId: SID, stale: true });
-		expect(s.stale).toBe(true);
 	});
 
 	it("session_status carries hasOlderHistory", () => {
