@@ -235,6 +235,9 @@ export class SessionActor {
 	 * @returns an unsubscribe function.
 	 */
 	subscribe(listener: Listener, opts?: { internal?: boolean }): () => void {
+		// Tell the client to clear its transcript BEFORE the replay, so a reconnect
+		// re-attach rebuilds cleanly instead of appending a duplicate history.
+		if (!opts?.internal) listener({ type: "attach_reset", sessionId: this.id });
 		for (const event of this.buffer) listener(event);
 		listener(this.statusEvent());
 		if (this.pendingRequest) listener(this.pendingRequest);

@@ -179,6 +179,19 @@ describe("SessionActor", () => {
 		expect(actor.listenerCount).toBe(0);
 	});
 
+	it("emits attach_reset first on subscribe so a re-attach rebuilds cleanly", () => {
+		const { actor } = makeActor();
+		const events = collect(actor);
+		expect(events[0]).toEqual({ type: "attach_reset", sessionId: actor.id });
+	});
+
+	it("does not emit attach_reset to internal subscribers", () => {
+		const { actor } = makeActor();
+		const events: BridgeEvent[] = [];
+		actor.subscribe((e) => events.push(e), { internal: true });
+		expect(events.some((e) => e.type === "attach_reset")).toBe(false);
+	});
+
 	it("starts in default mode and changes permission mode at runtime", async () => {
 		const { fake, actor } = makeActor();
 		actor.enqueue("hi");

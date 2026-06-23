@@ -137,6 +137,20 @@ export function applyEvent(state: ChatState, event: BridgeEvent): ChatState {
 				// a resolved/expired request is implied once we're no longer awaiting.
 				pendingPermission: event.status === "awaiting_permission" ? state.pendingPermission : undefined,
 			};
+		case "attach_reset":
+			// Clear the transcript so the replay that follows rebuilds cleanly.
+			return {
+				...state,
+				items: [],
+				openKind: null,
+				todos: [],
+				pendingPermission: undefined,
+				hasOlderHistory: false,
+				costUsd: undefined,
+				externalActivity: "none",
+				externalEntrypoint: undefined,
+				stale: false,
+			};
 		case "external_activity":
 			return { ...state, externalActivity: event.severity, externalEntrypoint: event.entrypoint };
 		case "session_stale":

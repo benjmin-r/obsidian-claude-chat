@@ -47,6 +47,8 @@ export class ChatView extends ItemView {
 	private pendingText: string | undefined;
 	/** last text dispatched to the server; used to roll back if the server blocks it. */
 	private lastSentText: string | undefined;
+	/** one-shot emphasis on the activity banner after a blocked send. */
+	private bannerFlash = false;
 
 	private connIconEl!: HTMLElement;
 	private activityIconEl!: HTMLElement;
@@ -278,8 +280,8 @@ export class ChatView extends ItemView {
 		// Gate against staleness / external activity (the server enforces this too).
 		if (this.state.sessionId) {
 			if (this.state.stale) {
-				this.showStaleBlockedNotice();
-				return; // keep the draft — Reload + review the conversation first
+				this.flashBanner(); // the warning banner is the feedback; keep the draft
+				return;
 			}
 			if (this.state.externalActivity !== "none") {
 				this.confirmSendAnyway(text);
@@ -314,16 +316,9 @@ export class ChatView extends ItemView {
 			this.app,
 			"Send anyway?",
 			`This session ${where}. Sending may conflict with the other session.`,
-			"Send anyway",
+			"⚠️ Send anyway",
 			() => this.dispatchSend(text, true)
 		).open();
-	}
-
-	private showStaleBlockedNotice(): void {
-		new Notice(
-			"You tried to send to a stale session — reload and review the conversation flow, then decide if sending still matters.",
-			0
-		);
 	}
 
 	/** A send our local gate allowed but the server refused (a race): roll back + restore. */
@@ -338,8 +333,8 @@ export class ChatView extends ItemView {
 			window.localStorage.setItem(this.draftKey(), this.lastSentText);
 			this.lastSentText = undefined;
 		}
-		if (reason === "stale") this.showStaleBlockedNotice();
-		else new Notice("Message not sent — this session is open in a terminal. Tap Send to override, or wait.", 8000);
+		if (reason === "stale") this.flashBanner();
+		else new Notice("Message not sent — this session is open in a terminal. Use 'Send anyway' to override.", 6000);
 		this.render();
 	}
 
@@ -746,12 +741,13 @@ export class ChatView extends ItemView {
 		const { stale, externalActivity } = this.state;
 		if (!stale && externalActivity === "none") return;
 		const box = this.activityBannerEl.createDiv({ cls: "occ-activity" });
+		if (this.bannerFlash) box.addClass("occ-activity-flash");
 		const head = box.createDiv({ cls: "occ-activity-head" });
 
 		if (stale) {
 			box.addClass("occ-activity-stale");
-			setIcon(head.createSpan({ cls: "occ-activity-icon" }), "refresh-cw");
-			head.createSpan({ text: "Newer messages were added elsewhere." });
+			setIcon(head.createSpan({ cls: "occ-activity-icon" }), "alert-triangle");
+			head.createSpan({ text: "This session changed in a terminal — reload to review before sending." });
 			const buttons = box.createDiv({ cls: "occ-activity-buttons" });
 			const reload = buttons.createEl("button", { text: "Reload", cls: "mod-cta" });
 			reload.addEventListener("click", () => {
@@ -765,6 +761,16 @@ export class ChatView extends ItemView {
 		const who = this.state.externalEntrypoint ? ` (${this.state.externalEntrypoint})` : "";
 		setIcon(head.createSpan({ cls: "occ-activity-icon" }), busy ? "alert-triangle" : "users");
 		head.createSpan({ text: busy ? `Active in a terminal right now${who}.` : `Also open in a terminal${who}.` });
+	}
+
+	/** One-shot emphasis on the activity banner (feedback when a send is blocked). */
+	private flashBanner(): void {
+		this.bannerFlash = true;
+		this.renderActivityBanner();
+		window.setTimeout(() => {
+			this.bannerFlash = false;
+			this.renderActivityBanner();
+		}, 450);
 	}
 }
 

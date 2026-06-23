@@ -152,6 +152,12 @@ export interface SessionStatusEvent {
 	permissionMode?: PermissionMode;
 }
 
+/** Sent FIRST on every (re)attach so the client clears its transcript before the replay. */
+export interface AttachResetEvent {
+	type: "attach_reset";
+	sessionId: string;
+}
+
 /** A session is held by a live process other than this server (corruption guard). */
 export interface ExternalActivityEvent {
 	type: "external_activity";
@@ -200,6 +206,7 @@ export type BridgeEvent =
 	| ErrorEvent
 	| SessionsListEvent
 	| SessionStatusEvent
+	| AttachResetEvent
 	| ExternalActivityEvent
 	| SessionStaleEvent
 	| SendBlockedEvent
