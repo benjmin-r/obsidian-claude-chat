@@ -159,15 +159,21 @@ describe("SessionActor", () => {
 		expect(late.some((e) => e.type === "session_stale" && e.stale === true)).toBe(true);
 	});
 
-	it("resets the staleness baseline when our own turn completes", async () => {
+	it("clears staleness when our own turn completes", async () => {
 		const { fake, actor } = makeActor();
-		actor.markSelfMtime(0);
 		actor.setStale(true);
 		actor.enqueue("hi");
 		fake.emit({ type: "result", subtype: "success", is_error: false });
 		await flush();
 		expect(actor.stale).toBe(false);
-		expect(actor.selfMtime).toBe(1000); // now()
+	});
+
+	it("tracks the staleness baseline", () => {
+		const { actor } = makeActor();
+		expect(actor.msgBaseline).toBe(0);
+		actor.markBaseline(5, 123);
+		expect(actor.msgBaseline).toBe(5);
+		expect(actor.lastSeenMtime).toBe(123);
 	});
 
 	it("tracks listenerCount", () => {

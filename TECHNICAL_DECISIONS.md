@@ -19,8 +19,12 @@ concurrent process. There was no cross-process awareness.
 - **External activity** (corruption guard): read Claude Code's live-process
   registry `~/.claude/sessions/*.json`, scoped to `cwd === vaultCwd`, pid-alive,
   excluding our own subprocess tree (`/proc` PPID walk). Severity `busy|idle|none`.
-- **Staleness**: on-disk `lastModified` (SDK `getSessionInfo`) vs the actor's
-  last-self-write baseline.
+- **Staleness**: the on-disk **conversation-message count** (`getSessionMessages`)
+  exceeds the actor's baseline — a foreign *turn* was added. (mtime/fileSize were
+  too eager: an open CLI rewrites metadata/snapshots, which falsely tripped them.)
+  Gated by a cheap mtime check; baseline re-established after each of our own turns.
+  Independent of external activity, so a CLI that adds a turn shows "reload" even
+  while still open.
 
 Enforced at `enqueue` (server-authoritative) + mirrored in the plugin: **stale ⇒
 block, no override** (persistent notice, must Reload first); **external busy/idle ⇒

@@ -6,7 +6,7 @@
  * still hold the provisional id keep resolving to the same actor.
  */
 
-import { mapHistoryMessages, type ExternalSeverity, type SessionSummary } from "@occ/protocol";
+import { mapHistoryMessages, type SessionSummary } from "@occ/protocol";
 import { SessionActor, type SessionActorDeps } from "./session-actor";
 import type {
 	DeleteStored,
@@ -51,7 +51,6 @@ export class SessionManager {
 
 	private readonly detect: DetectExternalActivity;
 	private readonly lastModified: SessionLastModified;
-	private static readonly STALE_SLACK_MS = 3000;
 
 	constructor(
 		private readonly deps: SessionManagerDeps,
@@ -66,9 +65,8 @@ export class SessionManager {
 		for (const actor of this.actors) {
 			const sid = actor.sdkSessionId;
 			if (!sid || actor.clientListenerCount === 0) continue;
-			const act = this.detect(this.config.cwd, sid);
-			actor.setExternalActivity(act);
-			void this.refreshStale(actor, sid, act.severity);
+			actor.setExternalActivity(this.detect(this.config.cwd, sid));
+			void this.refreshStale(actor, sid);
 		}
 	}
 
@@ -82,44 +80,58 @@ export class SessionManager {
 		}
 	}
 
-	private async refreshStale(actor: SessionActor, sid: string, severity: ExternalSeverity): Promise<void> {
-		// While a foreign process is live the external guard applies — don't also
-		// flag stale. And our own in-flight turn writes the file, so only evaluate
-		// staleness when idle (otherwise a long turn looks "stale" mid-stream).
-		if (severity !== "none" || actor.status !== "idle") {
-			actor.setStale(false);
-			return;
-		}
+	/**
+	 * Staleness = the on-disk conversation has MORE messages than our baseline (a
+	 * foreign turn was added). Metadata writes (mode, snapshots, an idle CLI just
+	 * sitting open) don't change the message count, so they don't false-trigger.
+	 * Gated on a cheap mtime check + skipped while we're mid-turn / re-baselining.
+	 */
+	private async refreshStale(actor: SessionActor, sid: string): Promise<void> {
+		if (actor.status !== "idle" || actor.rebaselining) return; // our own writes; not stale
 		const mtime = await this.lastModified(this.config.cwd, sid);
-		if (mtime === undefined) return;
-		actor.setStale(mtime > actor.selfMtime + SessionManager.STALE_SLACK_MS);
+		if (mtime === undefined || mtime <= actor.lastSeenMtime) return; // nothing new on disk
+		const count = (await this.deps.loadHistory(this.config.cwd, sid)).length;
+		actor.setLastSeenMtime(mtime);
+		actor.setStale(count > actor.msgBaseline);
+	}
+
+	/** Re-establish the staleness baseline after one of OUR OWN turns completes. */
+	private async rebaseline(actor: SessionActor, sid: string): Promise<void> {
+		actor.beginRebaseline();
+		try {
+			const count = (await this.deps.loadHistory(this.config.cwd, sid)).length;
+			const mtime = await this.lastModified(this.config.cwd, sid);
+			actor.markBaseline(count, mtime ?? actor.lastSeenMtime);
+			actor.setStale(false);
+		} catch {
+			// best-effort; staleness stays as-is
+		} finally {
+			actor.endRebaseline();
+		}
 	}
 
 	/**
-	 * Fresh pre-send guard (also refreshes the actor's banners). A live foreign
-	 * holder takes precedence and is overridable; staleness only applies once no
-	 * one else holds the session and is NOT overridable (reload first). A brand-new
-	 * session (no SDK id yet) is always 'ok'.
+	 * Fresh pre-send guard (also refreshes the actor's banners). Staleness (a
+	 * foreign turn on disk) blocks first and is NOT overridable — reload to review.
+	 * A live foreign holder otherwise blocks but is overridable. A brand-new session
+	 * (no SDK id yet) is always 'ok'.
 	 */
 	async sendGate(actor: SessionActor): Promise<SendGate> {
 		const sid = actor.sdkSessionId;
 		if (!sid) return "ok";
-		// A live foreign holder takes precedence (override allowed); staleness only
-		// applies once no one else is holding the session.
+		if (!actor.rebaselining) {
+			const count = (await this.deps.loadHistory(this.config.cwd, sid)).length;
+			if (count > actor.msgBaseline) {
+				actor.setStale(true);
+				return "stale";
+			}
+		}
+		actor.setStale(false);
 		const act = this.detect(this.config.cwd, sid);
 		actor.setExternalActivity(act);
-		if (act.severity === "busy") {
-			actor.setStale(false);
-			return "external_busy";
-		}
-		if (act.severity === "idle") {
-			actor.setStale(false);
-			return "external_idle";
-		}
-		const mtime = await this.lastModified(this.config.cwd, sid);
-		const stale = mtime !== undefined && mtime > actor.selfMtime + SessionManager.STALE_SLACK_MS;
-		actor.setStale(stale);
-		return stale ? "stale" : "ok";
+		if (act.severity === "busy") return "external_busy";
+		if (act.severity === "idle") return "external_idle";
+		return "ok";
 	}
 
 	/** Start a brand-new session. */
@@ -190,9 +202,9 @@ export class SessionManager {
 		try {
 			const messages = await this.deps.loadHistory(this.config.cwd, sessionId);
 			actor.seedHistory(mapHistoryMessages(messages, sessionId));
-			// Baseline staleness against the file's current mtime (we're now in sync).
+			// Baseline staleness against the conversation we just loaded (now in sync).
 			const mtime = await this.lastModified(this.config.cwd, sessionId);
-			if (mtime !== undefined) actor.markSelfMtime(mtime);
+			actor.markBaseline(messages.length, mtime ?? 0);
 		} catch {
 			// history is best-effort; resume still works for the next turn.
 		}
@@ -266,9 +278,11 @@ export class SessionManager {
 		// Learn the canonical SDK id as soon as it is reported, and alias it.
 		// Internal: must not count as a client listener (idle-reaping depends on that).
 		const off = actor.subscribe(
-			() => {
+			(event) => {
 				const sid = actor.sdkSessionId;
 				if (sid && this.index.get(sid) !== actor) this.index.set(sid, actor);
+				// After our own turn lands, re-establish the staleness baseline.
+				if (event.type === "done" && sid) void this.rebaseline(actor, sid);
 			},
 			{ internal: true }
 		);
