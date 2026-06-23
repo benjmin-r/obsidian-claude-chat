@@ -6,7 +6,7 @@
  * still hold the provisional id keep resolving to the same actor.
  */
 
-import { mapHistoryMessages, type SessionSummary } from "@occ/protocol";
+import { mapHistoryMessages, type ExternalSeverity, type SessionSummary } from "@occ/protocol";
 import { SessionActor, type SessionActorDeps } from "./session-actor";
 import type {
 	DeleteStored,
@@ -66,8 +66,9 @@ export class SessionManager {
 		for (const actor of this.actors) {
 			const sid = actor.sdkSessionId;
 			if (!sid || actor.clientListenerCount === 0) continue;
-			actor.setExternalActivity(this.detect(this.config.cwd, sid));
-			void this.refreshStale(actor, sid);
+			const act = this.detect(this.config.cwd, sid);
+			actor.setExternalActivity(act);
+			void this.refreshStale(actor, sid, act.severity);
 		}
 	}
 
@@ -81,29 +82,44 @@ export class SessionManager {
 		}
 	}
 
-	private async refreshStale(actor: SessionActor, sid: string): Promise<void> {
+	private async refreshStale(actor: SessionActor, sid: string, severity: ExternalSeverity): Promise<void> {
+		// While a foreign process is live the external guard applies — don't also
+		// flag stale. And our own in-flight turn writes the file, so only evaluate
+		// staleness when idle (otherwise a long turn looks "stale" mid-stream).
+		if (severity !== "none" || actor.status !== "idle") {
+			actor.setStale(false);
+			return;
+		}
 		const mtime = await this.lastModified(this.config.cwd, sid);
 		if (mtime === undefined) return;
 		actor.setStale(mtime > actor.selfMtime + SessionManager.STALE_SLACK_MS);
 	}
 
 	/**
-	 * Fresh pre-send guard (also refreshes the actor's banners). Staleness takes
-	 * precedence and is never overridable; external activity is overridable by the
-	 * caller. A brand-new session (no SDK id yet) is always 'ok'.
+	 * Fresh pre-send guard (also refreshes the actor's banners). A live foreign
+	 * holder takes precedence and is overridable; staleness only applies once no
+	 * one else holds the session and is NOT overridable (reload first). A brand-new
+	 * session (no SDK id yet) is always 'ok'.
 	 */
 	async sendGate(actor: SessionActor): Promise<SendGate> {
 		const sid = actor.sdkSessionId;
 		if (!sid) return "ok";
+		// A live foreign holder takes precedence (override allowed); staleness only
+		// applies once no one else is holding the session.
+		const act = this.detect(this.config.cwd, sid);
+		actor.setExternalActivity(act);
+		if (act.severity === "busy") {
+			actor.setStale(false);
+			return "external_busy";
+		}
+		if (act.severity === "idle") {
+			actor.setStale(false);
+			return "external_idle";
+		}
 		const mtime = await this.lastModified(this.config.cwd, sid);
 		const stale = mtime !== undefined && mtime > actor.selfMtime + SessionManager.STALE_SLACK_MS;
 		actor.setStale(stale);
-		const act = this.detect(this.config.cwd, sid);
-		actor.setExternalActivity(act);
-		if (stale) return "stale";
-		if (act.severity === "busy") return "external_busy";
-		if (act.severity === "idle") return "external_idle";
-		return "ok";
+		return stale ? "stale" : "ok";
 	}
 
 	/** Start a brand-new session. */

@@ -72,10 +72,10 @@ describe("SessionManager", () => {
 		expect(manager.get("old-session")).toBe(reconstructed);
 	});
 
-	it("pollExternalActivity surfaces activity + staleness to attached, identified sessions", async () => {
+	it("poll surfaces external activity and suppresses stale while a foreign holder is live", async () => {
 		const { fake, manager } = makeManager({
 			detectExternalActivity: () => ({ severity: "busy", pid: 5, entrypoint: "cli" }),
-			sessionLastModified: async () => 10_000,
+			sessionLastModified: async () => 10_000, // would be stale, but a holder is live
 		});
 		const actor = manager.create();
 		const events: BridgeEvent[] = [];
@@ -83,10 +83,25 @@ describe("SessionManager", () => {
 		actor.enqueue("hi");
 		fake.emit({ type: "system", subtype: "init", session_id: "sdk-1" }); // give it a real id
 		await flush();
-		actor.markSelfMtime(0); // 10_000 > 0 + slack → stale
+		actor.markSelfMtime(0);
 		manager.pollExternalActivity();
 		await flush();
 		expect(events.some((e) => e.type === "external_activity" && e.severity === "busy")).toBe(true);
+		expect(events.some((e) => e.type === "session_stale" && e.stale === true)).toBe(false);
+	});
+
+	it("poll flags staleness only when idle with no foreign holder", async () => {
+		let mtime = 0;
+		const { manager } = makeManager({
+			detectExternalActivity: () => ({ severity: "none" }),
+			sessionLastModified: async () => mtime,
+		});
+		const actor = await manager.resumeWithHistory("sess-1"); // idle, real id, selfMtime seeded = 0
+		const events: BridgeEvent[] = [];
+		actor.subscribe((e) => events.push(e));
+		mtime = 1_000_000; // file advanced under us
+		manager.pollExternalActivity();
+		await flush();
 		expect(events.some((e) => e.type === "session_stale" && e.stale === true)).toBe(true);
 	});
 
