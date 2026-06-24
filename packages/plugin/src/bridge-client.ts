@@ -36,6 +36,7 @@ export interface BridgeClientOptions {
 	now?: () => number;
 }
 
+const CONNECTING = 0;
 const OPEN = 1;
 /** Heartbeat cadence + how long without ANY inbound frame counts as a dead socket. */
 const HEARTBEAT_MS = 15_000;
@@ -52,6 +53,7 @@ export class BridgeClient {
 	private attachTarget: string | undefined;
 	/** epoch ms of the last inbound frame; a stale value means the socket is dead. */
 	private lastSeenAt = 0;
+	private probePending = false;
 
 	constructor(private readonly opts: BridgeClientOptions) {
 		this.attachTarget = opts.attach;
@@ -62,6 +64,10 @@ export class BridgeClient {
 	}
 
 	connect(): void {
+		// Idempotent: a foreground can fire visibilitychange + focus + online together;
+		// don't spawn duplicate sockets if one is already connecting/open.
+		const rs = this.ws?.readyState;
+		if (rs === CONNECTING || rs === OPEN) return;
 		this.intentionalClose = false;
 		this.cancelReconnect();
 		this.stopHeartbeat();
@@ -89,14 +95,19 @@ export class BridgeClient {
 	 * no reply arrives (catches "stale-open" sockets the OS killed without a close).
 	 */
 	checkAlive(): void {
-		if (!this.isConnected()) {
-			this.connect();
+		const rs = this.ws?.readyState;
+		if (rs === CONNECTING) return; // already (re)connecting — let it finish
+		if (rs !== OPEN) {
+			this.connect(); // dead / never opened → reconnect
 			return;
 		}
+		if (this.probePending) return; // one probe at a time
+		this.probePending = true;
 		const before = this.lastSeenAt;
 		this.ws?.send(JSON.stringify({ type: "ping" }));
 		const schedule = this.opts.schedule ?? ((fn, ms) => setTimeout(fn, ms));
 		schedule(() => {
+			this.probePending = false;
 			if (this.isConnected() && this.lastSeenAt === before) this.forceReconnect();
 		}, PROBE_MS);
 	}
@@ -197,7 +208,8 @@ export class BridgeClient {
 	}
 
 	private onError(): void {
-		this.opts.onEvent({ type: "error", message: "WebSocket error." });
+		// Transport errors are noise — the connection icon already shows the state, and
+		// `onClose` + the heartbeat drive recovery. Don't spam the user with a Notice.
 	}
 
 	private onClose(): void {

@@ -212,11 +212,20 @@ describe("BridgeClient", () => {
 		expect(FakeWs.instances.length).toBeGreaterThan(before);
 	});
 
-	it("emits an error on socket error", () => {
+	it("does not surface transport errors as a Notice (the icon shows the state)", () => {
 		const h = makeClient();
 		h.client.connect();
 		h.last().onerror?.();
-		expect(h.events).toContainEqual({ type: "error", message: "WebSocket error." });
+		expect(h.events.some((e) => e.type === "error")).toBe(false);
+	});
+
+	it("connect() is idempotent while connecting/open (no duplicate sockets on foreground)", () => {
+		const h = makeClient();
+		h.client.connect(); // creates socket #1 (CONNECTING)
+		h.client.connect(); // still connecting → no-op
+		h.last().fireOpen(); // now OPEN
+		h.client.connect(); // open → no-op
+		expect(FakeWs.instances).toHaveLength(1);
 	});
 
 	it("reports connection status", () => {
