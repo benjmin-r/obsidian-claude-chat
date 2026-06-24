@@ -80,6 +80,12 @@ export class ChatView extends ItemView {
 	private sessionsRefreshTimer: number | undefined;
 	private inputEl!: HTMLTextAreaElement;
 	private sendBtn!: HTMLButtonElement;
+	/**
+	 * `@`-mention file picker over the composer. Structurally typed so this field
+	 * exists for the keydown/Escape coordination before the controller is wired
+	 * (see file-suggest.ts); undefined until the popover module attaches it.
+	 */
+	private fileSuggest?: { isOpen(): boolean; close(): void; handleKeydown(e: KeyboardEvent): boolean };
 	/** tool blocks the user has expanded, kept across re-renders. */
 	private readonly expandedTools = new Set<string>();
 	/** set when an older-history page was just prepended, to keep the viewport stable. */
@@ -146,6 +152,27 @@ export class ChatView extends ItemView {
 		this.registerDomEvent(document, "visibilitychange", recover);
 		this.registerDomEvent(window, "focus", recover);
 		this.registerDomEvent(window, "online", recover);
+
+		// Keep Escape inside the view. Obsidian's global Escape hotkey would otherwise
+		// switch tabs / focus the editor; capture it at the view root so it never reaches
+		// that handler. Menus and Modals are rendered outside contentEl, so their own
+		// Escape handling is unaffected. When the @-mention popover is open, Escape just
+		// dismisses it (and nothing else).
+		this.registerDomEvent(
+			this.contentEl,
+			"keydown",
+			(e) => {
+				if (e.key !== "Escape") return;
+				if (this.fileSuggest?.isOpen()) this.fileSuggest.close();
+				e.preventDefault();
+				e.stopPropagation();
+			},
+			{ capture: true }
+		);
+
+		// Resolve markdown links that point at vault files (both [[wikilinks]] and
+		// [text](relative/path.md)) and open them in Obsidian; let real URLs open normally.
+		this.registerDomEvent(this.messagesInnerEl, "click", (e) => this.onMessageLinkClick(e));
 
 		this.render();
 	}
@@ -230,6 +257,8 @@ export class ChatView extends ItemView {
 		this.inputEl.value = window.localStorage.getItem(this.draftKey()) ?? "";
 		this.inputEl.addEventListener("input", () => window.localStorage.setItem(this.draftKey(), this.inputEl.value));
 		this.inputEl.addEventListener("keydown", (e) => {
+			// When the @-mention popover is open it owns ↑/↓/Enter/Tab (and Escape).
+			if (this.fileSuggest?.handleKeydown(e)) return;
 			if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
 				this.sendCurrent();
@@ -683,6 +712,31 @@ export class ChatView extends ItemView {
 				text: "Start chatting — type a message below, or tap the list icon to resume a past session.",
 			});
 		}
+	}
+
+	/**
+	 * Delegated handler for clicks on links inside rendered assistant messages.
+	 * Opens links that resolve to a vault file in Obsidian (Ctrl/Cmd → new pane);
+	 * genuine external URLs fall through to their default behaviour.
+	 */
+	private onMessageLinkClick(evt: MouseEvent): void {
+		const target = evt.target as HTMLElement | null;
+		const anchor = target?.closest?.("a");
+		if (!anchor) return;
+		// Wikilinks render as `a.internal-link` carrying the linkpath in data-href;
+		// markdown links keep it in href. Prefer data-href, fall back to href.
+		const raw = anchor.getAttribute("data-href") ?? anchor.getAttribute("href");
+		if (!raw) return;
+		// Leave schemed URLs (https:, mailto:, obsidian:, …) to open normally.
+		if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) return;
+		const linktext = raw.replace(/^\.\//, "");
+		// Strip any heading (#) / block (^) ref before resolving the file path.
+		const path = linktext.split(/[#^]/)[0] ?? linktext;
+		if (!path) return;
+		const dest = this.app.metadataCache.getFirstLinkpathDest(path, "");
+		if (!dest) return; // not a vault file — let the default behaviour stand
+		evt.preventDefault();
+		void this.app.workspace.openLinkText(linktext, "", evt.ctrlKey || evt.metaKey);
 	}
 
 	/** Copy `text` to the clipboard with a brief confirmation. */
