@@ -127,6 +127,17 @@ export class ChatView extends ItemView {
 			},
 		});
 		this.client.connect();
+
+		// Mobile-WS recovery: when the app returns to the foreground the OS has often
+		// silently killed the socket (and suspended our reconnect timers). Force a
+		// reconnect on visibility/focus if we're no longer connected.
+		const recover = (): void => {
+			if (!document.hidden && this.client && !this.client.isConnected()) this.client.connect();
+		};
+		this.registerDomEvent(document, "visibilitychange", recover);
+		this.registerDomEvent(window, "focus", recover);
+		this.registerDomEvent(window, "online", recover);
+
 		this.render();
 	}
 
