@@ -220,8 +220,8 @@ export class ChatView extends ItemView {
 		});
 		this.resizeObserver.observe(this.messagesInnerEl);
 
-		this.permissionEl = root.createDiv();
-		this.activityBannerEl = root.createDiv();
+		this.permissionEl = root.createDiv({ cls: "occ-permission-slot" });
+		this.activityBannerEl = root.createDiv({ cls: "occ-activity-slot" });
 
 		const inputRow = root.createDiv({ cls: "occ-input-row" });
 		this.inputEl = inputRow.createEl("textarea");
@@ -489,10 +489,10 @@ export class ChatView extends ItemView {
 		const menu = new Menu();
 		menu.addItem((i) =>
 			i
-				.setTitle("Copy shell resume command")
+				.setTitle("Copy resume command & close session")
 				.setIcon("terminal")
 				.onClick(() => {
-					this.copyToClipboard(`claude --resume ${sessionId}`);
+					this.copyToClipboard(`claude --resume ${sessionId}`, "Resume command copied — chat reset for the terminal");
 					this.closeCurrentSession(); // hand off to the terminal: return to empty state
 				})
 		);
@@ -686,14 +686,14 @@ export class ChatView extends ItemView {
 	}
 
 	/** Copy `text` to the clipboard with a brief confirmation. */
-	private copyToClipboard(text: string): void {
+	private copyToClipboard(text: string, okMessage = "Copied"): void {
 		const clip = navigator.clipboard;
 		if (!clip) {
 			new Notice("Clipboard unavailable", 2000);
 			return;
 		}
 		void clip.writeText(text).then(
-			() => new Notice("Copied", 1200),
+			() => new Notice(okMessage, 2000),
 			() => new Notice("Copy failed", 2000)
 		);
 	}

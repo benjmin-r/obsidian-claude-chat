@@ -178,6 +178,14 @@
 	align-self: flex-start;
 }
 
+/* Obsidian's app shell suppresses text selection on custom views; opt message
+   text back in so it can be long-pressed / drag-selected and copied. */
+.occ-bubble-content,
+.occ-bubble.occ-user > div {
+	user-select: text;
+	-webkit-user-select: text;
+}
+
 /* Copy buttons (always faintly visible so they're tappable on touch). */
 .occ-bubble {
 	position: relative;
@@ -258,8 +266,18 @@
 
 .occ-todos {
 	list-style: none;
+	margin: 0;
 	padding-left: 0;
 	font-size: 0.9em;
+}
+
+/* These slots are always in the DOM but usually empty; an empty flex child still
+   consumes the parent's `gap`, leaving dead space below the composer. Collapse
+   them when they have no content. */
+.occ-todos:empty,
+.occ-permission-slot:empty,
+.occ-activity-slot:empty {
+	display: none;
 }
 
 .occ-permission {
