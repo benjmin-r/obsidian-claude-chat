@@ -63,17 +63,6 @@ describe("SessionManager", () => {
 		expect(manager.get("old-session")).toBe(reconstructed);
 	});
 
-	it("poll surfaces CLI activity (read-only) to attached, identified sessions", async () => {
-		const { manager } = makeManager({
-			detectExternalActivity: () => ({ severity: "busy", pid: 5, entrypoint: "cli" }),
-		});
-		const actor = await manager.resumeWithHistory("sess-1");
-		const events: BridgeEvent[] = [];
-		actor.subscribe((e) => events.push(e));
-		manager.pollExternalActivity();
-		expect(events.some((e) => e.type === "external_activity" && e.severity === "busy")).toBe(true);
-	});
-
 	it("resumeWithHistory checks CLI activity immediately so attach reflects read-only at once", async () => {
 		const { manager } = makeManager({
 			detectExternalActivity: () => ({ severity: "busy", pid: 5, entrypoint: "cli" }),
@@ -104,13 +93,6 @@ describe("SessionManager", () => {
 		actor.subscribe(() => undefined); // a client is attached
 		manager.releaseSession("sess-1");
 		expect(manager.get("sess-1")).toBe(actor);
-	});
-
-	it("pollExternalActivity skips sessions with no listeners or no sdk id", () => {
-		const { manager } = makeManager({ detectExternalActivity: () => ({ severity: "busy" }) });
-		const actor = manager.create(); // no listeners, no sdk id
-		manager.pollExternalActivity();
-		expect(actor.externalActivity.severity).toBe("none");
 	});
 
 	it("reapIdle releases only idle, detached, stale actors", () => {

@@ -59,6 +59,11 @@ export interface ReadyEvent {
 	protocolVersion: number;
 }
 
+/** Heartbeat reply (to a client `ping`) — proves the socket is alive. */
+export interface PongEvent {
+	type: "pong";
+}
+
 /** Incremental assistant text (streamed token deltas, never buffered). */
 export interface AssistantTextDeltaEvent {
 	type: "assistant_text_delta";
@@ -188,6 +193,7 @@ export interface HistoryPageEvent {
 /** Discriminated union of every server -> client frame. */
 export type BridgeEvent =
 	| ReadyEvent
+	| PongEvent
 	| AssistantTextDeltaEvent
 	| ThinkingDeltaEvent
 	| UserEchoEvent
@@ -301,6 +307,11 @@ export interface ListSessionsMessage {
 	type: "list_sessions";
 }
 
+/** Liveness probe; the server replies with `pong`. */
+export interface PingMessage {
+	type: "ping";
+}
+
 /** Discriminated union of every client -> server frame. */
 export type ClientMessage =
 	| HelloMessage
@@ -314,4 +325,5 @@ export type ClientMessage =
 	| CloseSessionMessage
 	| SetPermissionModeMessage
 	| LoadOlderMessage
-	| ListSessionsMessage;
+	| ListSessionsMessage
+	| PingMessage;

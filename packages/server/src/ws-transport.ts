@@ -24,6 +24,7 @@ const CLIENT_MESSAGE_TYPES = new Set([
 	"load_older",
 	"set_permission_mode",
 	"list_sessions",
+	"ping",
 ]);
 
 /** Parse + minimally validate an incoming frame. Returns null for garbage. */

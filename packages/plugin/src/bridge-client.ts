@@ -32,24 +32,39 @@ export interface BridgeClientOptions {
 	/** injected so reconnect timing is testable; defaults provided by caller. */
 	schedule?: (fn: () => void, ms: number) => unknown;
 	cancel?: (handle: unknown) => void;
+	/** injected clock (testability); defaults to Date.now. */
+	now?: () => number;
 }
 
 const OPEN = 1;
+/** Heartbeat cadence + how long without ANY inbound frame counts as a dead socket. */
+const HEARTBEAT_MS = 15_000;
+const STALE_MS = 35_000;
+/** After an active probe (checkAlive), wait this long for a reply before reconnecting. */
+const PROBE_MS = 5_000;
 
 export class BridgeClient {
 	private ws: WsLike | undefined;
 	private intentionalClose = false;
 	private reconnectHandle: unknown;
+	private heartbeatHandle: unknown;
 	private attempts = 0;
 	private attachTarget: string | undefined;
+	/** epoch ms of the last inbound frame; a stale value means the socket is dead. */
+	private lastSeenAt = 0;
 
 	constructor(private readonly opts: BridgeClientOptions) {
 		this.attachTarget = opts.attach;
 	}
 
+	private now(): number {
+		return this.opts.now ? this.opts.now() : Date.now();
+	}
+
 	connect(): void {
 		this.intentionalClose = false;
 		this.cancelReconnect();
+		this.stopHeartbeat();
 		this.opts.onStateChange("connecting");
 		const ws = this.opts.createSocket(this.opts.url);
 		this.ws = ws;
@@ -62,9 +77,28 @@ export class BridgeClient {
 	disconnect(): void {
 		this.intentionalClose = true;
 		this.cancelReconnect();
+		this.stopHeartbeat();
 		this.ws?.close();
 		this.ws = undefined;
 		this.opts.onStateChange("disconnected");
+	}
+
+	/**
+	 * Active liveness probe — call when the app returns to the foreground. If the
+	 * socket is already dead, reconnect immediately; otherwise ping and reconnect if
+	 * no reply arrives (catches "stale-open" sockets the OS killed without a close).
+	 */
+	checkAlive(): void {
+		if (!this.isConnected()) {
+			this.connect();
+			return;
+		}
+		const before = this.lastSeenAt;
+		this.ws?.send(JSON.stringify({ type: "ping" }));
+		const schedule = this.opts.schedule ?? ((fn, ms) => setTimeout(fn, ms));
+		schedule(() => {
+			if (this.isConnected() && this.lastSeenAt === before) this.forceReconnect();
+		}, PROBE_MS);
 	}
 
 	/** Remember a session to attach to on the next (re)connect. */
@@ -138,10 +172,12 @@ export class BridgeClient {
 
 	private onOpen(): void {
 		this.attempts = 0;
+		this.lastSeenAt = this.now();
 		const hello: ClientMessage = { type: "hello", token: this.opts.token };
 		if (this.attachTarget) hello.attach = this.attachTarget;
 		this.ws?.send(JSON.stringify(hello));
 		this.opts.onStateChange("connected");
+		this.startHeartbeat();
 	}
 
 	private onMessage(data: unknown): void {
@@ -152,9 +188,12 @@ export class BridgeClient {
 		} catch {
 			return;
 		}
-		if (parsed && typeof parsed === "object" && typeof (parsed as { type?: unknown }).type === "string") {
-			this.opts.onEvent(parsed as BridgeEvent);
-		}
+		if (!parsed || typeof parsed !== "object") return;
+		const type = (parsed as { type?: unknown }).type;
+		if (typeof type !== "string") return;
+		this.lastSeenAt = this.now(); // any inbound frame proves the socket is alive
+		if (type === "pong") return; // liveness only — not a UI event
+		this.opts.onEvent(parsed as BridgeEvent);
 	}
 
 	private onError(): void {
@@ -163,9 +202,47 @@ export class BridgeClient {
 
 	private onClose(): void {
 		this.ws = undefined;
+		this.stopHeartbeat();
 		this.opts.onStateChange("disconnected");
 		if (this.intentionalClose || !this.opts.autoReconnect) return;
 		this.scheduleReconnect();
+	}
+
+	// -- heartbeat ------------------------------------------------------------
+
+	private startHeartbeat(): void {
+		this.stopHeartbeat();
+		const schedule = this.opts.schedule ?? ((fn, ms) => setTimeout(fn, ms));
+		this.heartbeatHandle = schedule(() => this.heartbeat(), HEARTBEAT_MS);
+	}
+
+	private heartbeat(): void {
+		if (!this.isConnected()) return; // onClose/reconnect owns the disconnected case
+		if (this.now() - this.lastSeenAt > STALE_MS) {
+			this.forceReconnect(); // dead-but-open socket
+			return;
+		}
+		this.ws?.send(JSON.stringify({ type: "ping" })); // server pong refreshes lastSeenAt
+		this.startHeartbeat();
+	}
+
+	private stopHeartbeat(): void {
+		if (this.heartbeatHandle === undefined) return;
+		const cancel = this.opts.cancel ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
+		cancel(this.heartbeatHandle);
+		this.heartbeatHandle = undefined;
+	}
+
+	/** Drop a (possibly dead-but-open) socket and reconnect from scratch. */
+	private forceReconnect(): void {
+		try {
+			this.ws?.close();
+		} catch {
+			// already dead
+		}
+		this.ws = undefined;
+		this.opts.onStateChange("disconnected");
+		this.connect();
 	}
 
 	private scheduleReconnect(): void {

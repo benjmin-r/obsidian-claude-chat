@@ -130,18 +130,21 @@ describe("BridgeClient", () => {
 		expect(frames).toContainEqual({ type: "load_older", sessionId: "s1" });
 	});
 
+	// the heartbeat schedules a 15000ms tick on open; reconnect schedules are the rest.
+	const recon = (h: Harness) => h.scheduled.filter((s) => s.ms !== 15000);
+
 	it("reconnects with backoff after an unexpected close", () => {
 		const h = makeClient();
 		h.client.connect();
 		h.last().fireOpen();
 		h.last().close(); // unexpected
-		expect(h.scheduled).toHaveLength(1);
-		expect(h.scheduled[0]!.ms).toBe(1000);
-		h.scheduled[0]!.fn(); // fire reconnect
+		expect(recon(h)).toHaveLength(1);
+		expect(recon(h)[0]!.ms).toBe(1000);
+		recon(h)[0]!.fn(); // fire reconnect
 		expect(FakeWs.instances).toHaveLength(2);
 		// second failure → doubled backoff
 		h.last().close();
-		expect(h.scheduled[1]!.ms).toBe(2000);
+		expect(recon(h)[1]!.ms).toBe(2000);
 	});
 
 	it("does not reconnect after an intentional disconnect", () => {
@@ -150,7 +153,7 @@ describe("BridgeClient", () => {
 		h.last().fireOpen();
 		h.client.disconnect();
 		expect(h.states.at(-1)).toBe("disconnected");
-		expect(h.scheduled).toHaveLength(0);
+		expect(recon(h)).toHaveLength(0);
 	});
 
 	it("does not reconnect when autoReconnect is off", () => {
@@ -158,7 +161,55 @@ describe("BridgeClient", () => {
 		h.client.connect();
 		h.last().fireOpen();
 		h.last().close();
-		expect(h.scheduled).toHaveLength(0);
+		expect(recon(h)).toHaveLength(0);
+	});
+
+	it("pings on heartbeat and reconnects a stale (dead-but-open) socket", () => {
+		let now = 0;
+		const h = makeClient({ now: () => now });
+		h.client.connect();
+		h.last().fireOpen();
+		const beat = () => h.scheduled.filter((s) => s.ms === 15000).at(-1)!.fn();
+		now = 15000;
+		beat(); // 15s since last frame (< 35s) → ping + reschedule
+		expect(h.sentFrames()).toContainEqual({ type: "ping" });
+		expect(FakeWs.instances).toHaveLength(1);
+		now = 60000;
+		beat(); // 60s with no inbound (> 35s) → dead socket → reconnect
+		expect(FakeWs.instances).toHaveLength(2);
+	});
+
+	it("pong refreshes liveness and is not surfaced as an event", () => {
+		let now = 0;
+		const h = makeClient({ now: () => now });
+		h.client.connect();
+		h.last().fireOpen();
+		now = 10000;
+		h.last().deliver({ type: "pong" });
+		expect(h.events.some((e) => e.type === "pong")).toBe(false);
+		now = 20000;
+		h.scheduled.filter((s) => s.ms === 15000).at(-1)!.fn(); // 10s since pong → still alive
+		expect(FakeWs.instances).toHaveLength(1);
+	});
+
+	it("checkAlive probes a live socket and reconnects if no reply", () => {
+		const h = makeClient();
+		h.client.connect();
+		h.last().fireOpen();
+		h.client.checkAlive();
+		expect(h.sentFrames()).toContainEqual({ type: "ping" });
+		h.scheduled.filter((s) => s.ms === 5000).at(-1)!.fn(); // no pong arrived → reconnect
+		expect(FakeWs.instances).toHaveLength(2);
+	});
+
+	it("checkAlive reconnects immediately when the socket is already closed", () => {
+		const h = makeClient();
+		h.client.connect();
+		h.last().fireOpen();
+		h.last().close(); // socket dead
+		const before = FakeWs.instances.length;
+		h.client.checkAlive();
+		expect(FakeWs.instances.length).toBeGreaterThan(before);
 	});
 
 	it("emits an error on socket error", () => {

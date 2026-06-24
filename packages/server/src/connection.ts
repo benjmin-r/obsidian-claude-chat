@@ -111,6 +111,9 @@ export class Connection {
 					.then((sessions) => this.deps.send({ type: "sessions_list", sessions }))
 					.catch(() => this.deps.send({ type: "sessions_list", sessions: this.deps.manager.list() }));
 				return {};
+			case "ping":
+				this.deps.send({ type: "pong" });
+				return {};
 			default:
 				return {};
 		}

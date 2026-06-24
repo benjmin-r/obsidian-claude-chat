@@ -28,10 +28,9 @@ function main(): void {
 
 	const transport = startTransport(config, manager);
 
-	// Proactively surface CLI activity (read-only) to attached clients. Lightweight
-	// (a small registry read per loaded session), so we poll snappily.
-	const poll = setInterval(() => manager.pollExternalActivity(), 1500);
-	poll.unref();
+	// NOTE: CLI activity is checked on demand only — when a session is opened/reloaded
+	// (resumeWithHistory) and before each send (sendGate). There is intentionally NO
+	// periodic poll: read-only never clears or reloads on its own; the user reloads.
 
 	// Release idle, detached sessions after 5 min so we stop being a writer the
 	// user's own CLI would conflict with (and free the subprocess).

@@ -3,7 +3,16 @@ import type { BridgeEvent, PermissionMode } from "@occ/protocol";
 import type ClaudeChatPlugin from "./main";
 import { BridgeClient, type WsLike } from "./bridge-client";
 import { MODEL_OPTIONS } from "./settings-types";
-import { applyEvent, appendUserMessage, clearPermission, initialState, setConnection, type ChatState, type ToolEntry } from "./view-model";
+import {
+	applyEvent,
+	appendUserMessage,
+	clearPermission,
+	initialState,
+	setConnection,
+	type ChatState,
+	type ConnectionState,
+	type ToolEntry,
+} from "./view-model";
 
 export const VIEW_TYPE_CLAUDE_CHAT = "claude-chat-view";
 
@@ -132,7 +141,7 @@ export class ChatView extends ItemView {
 		// silently killed the socket (and suspended our reconnect timers). Force a
 		// reconnect on visibility/focus if we're no longer connected.
 		const recover = (): void => {
-			if (!document.hidden && this.client && !this.client.isConnected()) this.client.connect();
+			if (!document.hidden) this.client?.checkAlive();
 		};
 		this.registerDomEvent(document, "visibilitychange", recover);
 		this.registerDomEvent(window, "focus", recover);
@@ -559,32 +568,32 @@ export class ChatView extends ItemView {
 		this.connIconEl.className = `occ-status-icon occ-conn-${conn}`;
 		this.connIconEl.setAttr("aria-label", `Connection: ${conn}`);
 
-		const mirroring = !!this.state.sessionId && !this.state.isWriter;
+		const working = this.state.status === "working";
+		const readOnly = !!this.state.sessionId && this.state.externalActivity !== "none";
+		const mirroring = !!this.state.sessionId && !this.state.isWriter && !readOnly;
 		let icon = "check";
 		let cls = "idle";
 		let label = "Idle — ready";
-		if (mirroring) {
-			[icon, cls, label] = ["eye", "mirroring", "Mirroring — read-only"];
-		} else if (this.state.status === "awaiting_permission") {
+		if (this.state.status === "awaiting_permission") {
 			[icon, cls, label] = ["alert-triangle", "awaiting", "Awaiting your permission"];
-		} else if (this.state.status === "working") {
+		} else if (working) {
 			[icon, cls, label] = ["loader", "working", "Working…"];
+		} else if (readOnly) {
+			[icon, cls, label] = ["lock", "readonly", "Read-only — open in a terminal"];
+		} else if (mirroring) {
+			[icon, cls, label] = ["eye", "mirroring", "Mirroring — another client is the writer"];
 		}
 		setIcon(this.activityIconEl, icon);
 		this.activityIconEl.className = `occ-status-icon occ-act-${cls}`;
 		this.activityIconEl.setAttr("aria-label", label);
 
-		// The Send button doubles as Stop while a turn is running.
-		const working = this.state.status === "working";
+		// The Send button doubles as Stop while a turn is running; locked when read-only.
 		this.sendBtn.setText(working ? "Stop" : "Send");
+		this.sendBtn.disabled = readOnly && !working;
 		this.sendBtn.classList.toggle("mod-warning", working);
-		this.sendBtn.classList.toggle("mod-cta", !working);
-
-		// Read-only while a CLI holds the session: lock the composer (Stop stays usable).
-		const readOnly = !!this.state.sessionId && this.state.externalActivity !== "none";
+		this.sendBtn.classList.toggle("mod-cta", !working && !this.sendBtn.disabled);
 		this.inputEl.disabled = readOnly;
 		this.inputEl.placeholder = readOnly ? "Read-only — open in a terminal" : "Message Claude…";
-		this.sendBtn.disabled = readOnly && !working;
 
 		this.costEl.setText(typeof this.state.costUsd === "number" ? `$${this.state.costUsd.toFixed(2)}` : "");
 
@@ -631,7 +640,7 @@ export class ChatView extends ItemView {
 	}
 
 	private openStatusLegend(): void {
-		new StatusLegendModal(this.app).open();
+		new StatusLegendModal(this.app, this.state.connection, () => this.client?.checkAlive()).open();
 	}
 
 	private renderTodos(): void {
@@ -850,23 +859,43 @@ const STATUS_LEGEND: ReadonlyArray<{ heading: string } | { icon: string; cls: st
 	{ icon: "check", cls: "occ-act-idle", desc: "Idle — ready for your message" },
 	{ icon: "loader", cls: "occ-act-working", desc: "Working — Claude is responding" },
 	{ icon: "alert-triangle", cls: "occ-act-awaiting", desc: "Awaiting your permission for a destructive tool" },
-	{ icon: "eye", cls: "occ-act-mirroring", desc: "Mirroring — another client is the writer; you're read-only" },
+	{ icon: "lock", cls: "occ-act-readonly", desc: "Read-only — the session is open in a terminal (CLI)" },
+	{ icon: "eye", cls: "occ-act-mirroring", desc: "Mirroring — another plugin tab/device is the writer" },
 ];
 
 class StatusLegendModal extends Modal {
+	constructor(
+		app: App,
+		private readonly connection: ConnectionState,
+		private readonly onReconnect: () => void
+	) {
+		super(app);
+	}
+
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.createEl("h3", { text: "Status icons" });
+		contentEl.createEl("h3", { text: "Status & connection" });
+
+		const row = contentEl.createDiv({ cls: "occ-legend-conn" });
+		row.createSpan({ text: `Connection: ${this.connection}` });
+		const btn = row.createEl("button", { text: "Test / reconnect now", cls: "mod-cta" });
+		btn.addEventListener("click", () => {
+			this.onReconnect();
+			new Notice("Checking connection…", 2000);
+			this.close();
+		});
+
+		contentEl.createEl("h4", { text: "Status icons" });
 		for (const entry of STATUS_LEGEND) {
 			if ("heading" in entry) {
-				contentEl.createEl("h4", { text: entry.heading });
+				contentEl.createEl("h5", { text: entry.heading });
 				continue;
 			}
-			const row = contentEl.createDiv({ cls: "occ-legend-row" });
-			const ic = row.createSpan({ cls: `occ-status-icon ${entry.cls}` });
+			const legendRow = contentEl.createDiv({ cls: "occ-legend-row" });
+			const ic = legendRow.createSpan({ cls: `occ-status-icon ${entry.cls}` });
 			setIcon(ic, entry.icon);
-			row.createSpan({ text: entry.desc });
+			legendRow.createSpan({ text: entry.desc });
 		}
 	}
 

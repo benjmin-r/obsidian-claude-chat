@@ -49,15 +49,6 @@ export class SessionManager {
 		this.detect = deps.detectExternalActivity ?? (() => ({ severity: "none" }));
 	}
 
-	/** Refresh CLI-activity (read-only) state for every attached, identified session. */
-	pollExternalActivity(): void {
-		for (const actor of this.actors) {
-			const sid = actor.sdkSessionId;
-			if (!sid || actor.clientListenerCount === 0) continue;
-			actor.setExternalActivity(this.detect(this.config.cwd, sid));
-		}
-	}
-
 	/** Release actors idle longer than maxIdleMs with no attached clients. */
 	reapIdle(maxIdleMs: number): void {
 		const now = this.deps.now();

@@ -83,6 +83,17 @@
 .occ-act-awaiting {
 	color: var(--text-warning, var(--text-error));
 }
+.occ-act-readonly {
+	color: var(--text-warning, var(--color-orange, #d9892f));
+}
+
+.occ-legend-conn {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	margin-bottom: 8px;
+}
 
 @keyframes occ-spin {
 	to {
@@ -352,6 +363,13 @@
 	flex: 1;
 	resize: vertical;
 	min-height: 48px;
+}
+
+/* Read-only: make the locked composer clearly inactive. */
+.occ-input-row textarea:disabled,
+.occ-input-row button:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
 }
 
 /* The sidebar itself must never scroll sideways. */
