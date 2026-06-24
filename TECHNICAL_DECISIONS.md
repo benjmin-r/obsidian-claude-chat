@@ -6,6 +6,36 @@ Each entry is ≤200 words.
 
 ---
 
+## TDL-20260624-003: Composer/UX polish — Escape capture, `@`-suggest, link routing, rename propagation
+
+**Date:** 2026-06-24
+**Status:** Implemented
+**Context:** A batch of daily-use UX gaps: Obsidian's global Escape hotkey stole
+focus/switched tabs from the composer; assistant-message links and a typed `@`
+file reference were inert; a "mirroring" badge confused more than it helped; and
+plugin renames were suspected not to reach `claude --resume`.
+**Decision:**
+
+- **Escape:** swallow it in a capture-phase listener on the view root so it never
+  reaches Obsidian's keymap. Menus/Modals render outside `contentEl`, so theirs
+  still work. The `@`-popover dismiss is folded into this one handler.
+- **`@`-mention picker:** a self-contained controller over the `<textarea>` —
+  `AbstractInputSuggest` only supports `<input>`/contenteditable. Pure
+  `findMentionQuery`/`spliceMention` helpers are unit-tested; matching reuses
+  `prepareFuzzySearch`.
+- **Vault links:** one delegated click handler resolves `data-href`/`href` via
+  `metadataCache.getFirstLinkpathDest`; real URLs fall through.
+- **Mirroring badge:** removed (UI only) — the server single-writer lock stays.
+- **Rename:** verified `renameSession` appends `custom-title` and `listSessions`
+  derives the title from it; no code change. A running CLI shows it on next launch
+  (it snapshots its list), not mid-session.
+
+**Consequences:** Escape is inert in an empty composer (intentional). `renameSession`
+only appends to an existing on-disk session.
+**Files:** plugin `{chat-view,file-suggest}.ts`, `styles.css`.
+
+---
+
 ## TDL-20260624-002: Mobile-resilient WebSocket transport
 
 **Date:** 2026-06-24
