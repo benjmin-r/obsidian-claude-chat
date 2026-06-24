@@ -73,8 +73,7 @@
 .occ-conn-disconnected {
 	color: var(--text-error);
 }
-.occ-act-idle,
-.occ-act-mirroring {
+.occ-act-idle {
 	color: var(--text-muted);
 }
 .occ-act-working {

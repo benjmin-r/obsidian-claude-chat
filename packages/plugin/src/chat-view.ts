@@ -599,7 +599,6 @@ export class ChatView extends ItemView {
 
 		const working = this.state.status === "working";
 		const readOnly = !!this.state.sessionId && this.state.externalActivity !== "none";
-		const mirroring = !!this.state.sessionId && !this.state.isWriter && !readOnly;
 		let icon = "check";
 		let cls = "idle";
 		let label = "Idle — ready";
@@ -609,8 +608,6 @@ export class ChatView extends ItemView {
 			[icon, cls, label] = ["loader", "working", "Working…"];
 		} else if (readOnly) {
 			[icon, cls, label] = ["lock", "readonly", "Read-only — open in a terminal"];
-		} else if (mirroring) {
-			[icon, cls, label] = ["eye", "mirroring", "Mirroring — another client is the writer"];
 		}
 		setIcon(this.activityIconEl, icon);
 		this.activityIconEl.className = `occ-status-icon occ-act-${cls}`;
@@ -914,7 +911,6 @@ const STATUS_LEGEND: ReadonlyArray<{ heading: string } | { icon: string; cls: st
 	{ icon: "loader", cls: "occ-act-working", desc: "Working — Claude is responding" },
 	{ icon: "alert-triangle", cls: "occ-act-awaiting", desc: "Awaiting your permission for a destructive tool" },
 	{ icon: "lock", cls: "occ-act-readonly", desc: "Read-only — the session is open in a terminal (CLI)" },
-	{ icon: "eye", cls: "occ-act-mirroring", desc: "Mirroring — another plugin tab/device is the writer" },
 ];
 
 class StatusLegendModal extends Modal {
