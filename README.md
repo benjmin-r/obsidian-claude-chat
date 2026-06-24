@@ -113,25 +113,63 @@ from the ribbon (message icon) or the *Open Claude chat* command.
   (`rm`, `mv`, truncating `>`, `git reset --hard`, …) pause for an **Allow/Deny**
   prompt in the sidebar.
 - **Client disconnects / mobile background (Level-2 resume):** the session keeps
-  running on the server; reconnecting replays the buffered transcript and then
-  the live tail.
+  running on the server. The plugin auto-reconnects when the app returns to the
+  foreground (and via a heartbeat that detects sockets the OS killed silently); on
+  reconnect it clears and replays the buffered transcript — including your last
+  message — then resumes the live tail.
 - **Server restart (Level-1 resume):** the in-flight turn is lost (the query runs
   in the server process), but the conversation is restored by resuming the
   session on the next attach.
-- **CLI interop:** because the server runs with `cwd` = the canonical vault path,
-  sessions are stored in the same place as the `claude` CLI, so
-  **`claude --resume <id>`** in the vault continues a sidebar session (and
-  vice-versa). Note: the CLI's interactive `/resume` *picker* lists only
-  CLI-started sessions (it filters by `entrypoint`), so SDK-created sessions are
-  resumable by id but won't appear in that list — the plugin's picker has a
-  "copy `claude --resume <id>`" button for exactly this.
-- **Single-writer rule:** drive a session from one place at a time. Extra clients
-  attach in a mirrored, read-only mode (a *(mirroring)* badge); the server
-  refuses a second writer until the first releases it. Don't drive the same
-  session from the sidebar and `claude --resume` simultaneously.
+- **CLI coexistence:** a session can move between the plugin and a terminal, but
+  only one may write at a time — see [CLI interoperability & locking](#cli-interoperability--locking).
 - The **server must stay running** for sessions to be live. Vault edits the agent
   makes converge to your other devices via your normal file sync (Obsidian Sync,
   etc.) — this project does not sync files itself.
+
+## CLI interoperability & locking
+
+The server runs with `cwd` = the canonical vault path, so its sessions are stored in
+the **same place** the `claude` CLI uses (`~/.claude/projects/<vault>/`). A session can
+therefore move between the Obsidian plugin and a terminal — but only **one** of them may
+*write* at a time, or the on-disk transcript forks. Rather than try to merge, the plugin
+enforces this with a **read-only** model.
+
+**Resuming across plugin ⇄ CLI**
+
+- `claude --resume <id>` in the vault continues a plugin session, and vice-versa.
+- The CLI's interactive `/resume` *picker* only lists CLI-started sessions (it filters by
+  `entrypoint`), so plugin-created sessions are resumable by id but won't show there — use
+  the picker's kebab → **Copy shell resume command** to grab `claude --resume <id>`.
+
+**Read-only when a CLI holds the session**
+
+- If a session you have open is also open in a terminal, the plugin goes **fully
+  read-only** (composer + Send disabled, 🔒 banner). There is **no override** — this is
+  deliberate, so a fork is impossible.
+- Detection is **on demand, never polled**: the plugin checks for CLI activity only when
+  you *open/reload* a session and when you *try to send* (the server refuses the send if a
+  CLI is live). It never auto-clears or auto-reloads.
+- To regain control: close the terminal session, then press **Reload** in the banner.
+  Reload re-reads the transcript from disk and re-checks for a CLI; if none is active, the
+  session becomes writable again. (Picking any session from the list always reloads from
+  disk, too.)
+
+**Clean hand-off to the terminal**
+
+- **Copy shell resume command** also *closes* the session in the plugin (returns to the
+  empty state) and releases the server's hold on it, so the terminal gets a clean,
+  sole-owner session.
+- A session left idle with no plugin view attached is released after ~5 minutes, so the
+  server stops being a writer your terminal would conflict with.
+
+**Among plugin clients** (sidebar + extra tabs + other devices) a single-writer rule also
+applies — extra views attach in a mirrored, read-only mode (an *eye* badge) and the server
+refuses a second writer until the first releases it.
+
+**How CLI activity is detected:** the server reads Claude Code's live-process registry
+(`~/.claude/sessions/*.json`), scoped to this vault's working dir and ignoring its own
+query subprocesses (a `/proc` ancestry check). It is best-effort — if that registry is
+absent or unreadable, no lock is applied.
 
 ## Development
 

@@ -6,10 +6,71 @@ Each entry is ≤200 words.
 
 ---
 
+## TDL-20260624-002: Mobile-resilient WebSocket transport
+
+**Date:** 2026-06-24
+**Status:** Implemented
+**Context:** On iPad, backgrounding Obsidian suspends the plugin JS and the OS kills
+the socket without delivering `onclose`, so the connection never recovered.
+Foregrounding then spawned duplicate sockets + repeated "WebSocket error" notices,
+and a reconnect's buffer-replay dropped the last (optimistic) user message.
+**Decision:**
+
+- **Heartbeat:** client pings every 15s; >35s with no inbound frame ⇒ a dead-but-open
+  socket ⇒ force-reconnect. `checkAlive()` actively probes on foreground.
+- **Foreground recovery:** reconnect on `visibilitychange`/`focus`/`online`; `connect()`
+  is idempotent while CONNECTING/OPEN (no duplicate sockets); one in-flight probe.
+- **Quiet errors:** transport `onerror` no longer raises a Notice — the connection icon
+  conveys state; only server/app errors notify.
+- **`attach_reset`:** the actor emits it first on every (re)attach so the client clears
+  before the buffer replay (no duplicated history on reconnect).
+- **Buffer the user turn:** `enqueue` persists a `user_echo` to the replay buffer
+  *without broadcasting* (the live client already shows it optimistically — no dupe),
+  so a reconnect replays the full user+answer exchange.
+
+**Consequences:** a brief flicker (clear-then-replay) on re-attach; a transient
+non-writer state is possible until a zombie connection is reaped.
+**Files:** plugin `{bridge-client,chat-view}.ts`, server `{session-actor,connection,
+ws-transport}.ts`, protocol `messages.ts` (ping/pong, attach_reset).
+
+---
+
+## TDL-20260624-001: Read-only-while-CLI-active + reload (replaces staleness guard)
+
+**Date:** 2026-06-24
+**Status:** Implemented (supersedes TDL-20260622-002)
+**Context:** The granular concurrent-writer guard (content-staleness via message-count
+baselines, `session_stale`, rebaseline-on-done, send override/`force`, a "Send anyway"
+modal) was too complex and produced false-positive banners + confusing precedence in
+device testing.
+**Decision:** A simpler, predictable model:
+
+- **A session open in a live CLI ⇒ the plugin is fully read-only** (text box + Send
+  disabled, no override). The server refuses the send too (`sendGate`).
+- **Freshness via reload, not diffing:** picking a session **always reloads** from disk;
+  a read-only session offers a **Reload** button that re-reads and re-checks CLI presence
+  — writable again only if no CLI is active.
+- **On-demand detection only:** CLI activity is checked at load (`resumeWithHistory`
+  immediate `detect`) and at send (`sendGate`). **No periodic poll** — read-only never
+  clears or reloads on its own (explicit user requirement).
+- **Clean hand-off:** "Copy shell resume command" also closes the current session and
+  releases the actor (`close_session` → detach + drop-if-idle). Idle, detached actors are
+  reaped after 5 min.
+
+**Alternatives:** keep mtime/message-count staleness (too eager/complex); proactive poll
+(user wanted on-demand only) — both rejected.
+**Consequences:** a CLI that opens *after* load isn't shown until you send (then blocked)
+or reload; best-effort (registry absent ⇒ no guard). All staleness machinery removed.
+**Files:** server `{session-actor,session-manager,connection,sdk-adapter,index}.ts`,
+protocol `messages.ts`, plugin `{view-model,chat-view,bridge-client}.ts`.
+
+---
+
 ## TDL-20260622-002: Guard concurrent writers + reconcile stale sessions
 
 **Date:** 2026-06-22
-**Status:** Implemented
+**Status:** SUPERSEDED by TDL-20260624-001 (this granular model proved too
+complex/edge-case-prone in device testing; replaced by read-only + reload).
 **Context:** A `SessionActor` holds one long-lived in-memory `query()`. If the same
 session is continued in the CLI, the plugin (a) shows a stale transcript and (b)
 can fork/corrupt the `.jsonl` by appending from stale context — even with no
