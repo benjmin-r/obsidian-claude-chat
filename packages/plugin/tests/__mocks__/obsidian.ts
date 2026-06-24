@@ -525,8 +525,10 @@ export class Menu {
 
 export class TFile {
 	path: string;
+	name: string;
 	basename: string;
 	extension: string;
+	parent: { path: string } | null = null;
 	stat = {
 		ctime: Date.now(),
 		mtime: Date.now(),
@@ -537,10 +539,35 @@ export class TFile {
 		this.path = path;
 		const parts = path.split("/");
 		const filename = parts[parts.length - 1];
+		this.name = filename;
 		const dotIndex = filename.lastIndexOf(".");
 		this.basename = dotIndex > 0 ? filename.substring(0, dotIndex) : filename;
 		this.extension = dotIndex > 0 ? filename.substring(dotIndex + 1) : "";
+		this.parent = parts.length > 1 ? { path: parts.slice(0, -1).join("/") } : { path: "/" };
 	}
+}
+
+/**
+ * Minimal stand-in for Obsidian's fuzzy matcher: case-insensitive subsequence
+ * match, scored by compactness (negative gap penalty) so closer matches rank
+ * higher — enough to exercise ordering in tests.
+ */
+export function prepareFuzzySearch(query: string): (text: string) => { score: number } | null {
+	const q = query.toLowerCase();
+	return (text: string) => {
+		const t = text.toLowerCase();
+		let ti = 0;
+		let score = 0;
+		let lastHit = -1;
+		for (const ch of q) {
+			const found = t.indexOf(ch, ti);
+			if (found === -1) return null;
+			if (lastHit >= 0) score -= found - lastHit - 1;
+			lastHit = found;
+			ti = found + 1;
+		}
+		return { score };
+	};
 }
 
 export class TFolder {

@@ -2,6 +2,7 @@ import { App, ItemView, MarkdownRenderer, Menu, Modal, Notice, setIcon, type Wor
 import type { BridgeEvent, PermissionMode } from "@occ/protocol";
 import type ClaudeChatPlugin from "./main";
 import { BridgeClient, type WsLike } from "./bridge-client";
+import { FileSuggest } from "./file-suggest";
 import { MODEL_OPTIONS } from "./settings-types";
 import {
 	applyEvent,
@@ -79,13 +80,10 @@ export class ChatView extends ItemView {
 	private sessionsLastOk = 0;
 	private sessionsRefreshTimer: number | undefined;
 	private inputEl!: HTMLTextAreaElement;
+	private inputRowEl!: HTMLElement;
 	private sendBtn!: HTMLButtonElement;
-	/**
-	 * `@`-mention file picker over the composer. Structurally typed so this field
-	 * exists for the keydown/Escape coordination before the controller is wired
-	 * (see file-suggest.ts); undefined until the popover module attaches it.
-	 */
-	private fileSuggest?: { isOpen(): boolean; close(): void; handleKeydown(e: KeyboardEvent): boolean };
+	/** `@`-mention file picker over the composer (see file-suggest.ts). */
+	private fileSuggest?: FileSuggest;
 	/** tool blocks the user has expanded, kept across re-renders. */
 	private readonly expandedTools = new Set<string>();
 	/** set when an older-history page was just prepended, to keep the viewport stable. */
@@ -174,6 +172,9 @@ export class ChatView extends ItemView {
 		// [text](relative/path.md)) and open them in Obsidian; let real URLs open normally.
 		this.registerDomEvent(this.messagesInnerEl, "click", (e) => this.onMessageLinkClick(e));
 
+		// `@`-mention file autocomplete on the composer.
+		this.fileSuggest = new FileSuggest(this.app, this.inputEl, this.inputRowEl);
+
 		this.render();
 	}
 
@@ -251,6 +252,7 @@ export class ChatView extends ItemView {
 		this.activityBannerEl = root.createDiv({ cls: "occ-activity-slot" });
 
 		const inputRow = root.createDiv({ cls: "occ-input-row" });
+		this.inputRowEl = inputRow;
 		this.inputEl = inputRow.createEl("textarea");
 		this.inputEl.placeholder = "Message Claude…";
 		// Restore + persist the unsent draft across view reloads.
