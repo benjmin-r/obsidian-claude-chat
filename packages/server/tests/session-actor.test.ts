@@ -54,6 +54,23 @@ describe("SessionActor", () => {
 		expect(late.filter((e) => e.type === "assistant_text_delta")).toHaveLength(2);
 	});
 
+	it("buffers the user turn for replay-on-reattach without broadcasting it live", async () => {
+		const { fake, actor } = makeActor();
+		const live = collect(actor); // attached before the turn
+		actor.enqueue("my question");
+		fake.emit(textDelta("answer"));
+		await flush();
+		// live: the user echo is NOT broadcast (the client shows it optimistically)
+		expect(live.some((e) => e.type === "user_echo")).toBe(false);
+		// a re-attaching client replays the FULL exchange, user turn before the answer
+		const replay = collect(actor);
+		const ui = replay.findIndex((e) => e.type === "user_echo");
+		const ai = replay.findIndex((e) => e.type === "assistant_text_delta");
+		expect(ui).toBeGreaterThanOrEqual(0);
+		expect(replay[ui]).toMatchObject({ type: "user_echo", text: "my question" });
+		expect(ui).toBeLessThan(ai);
+	});
+
 	it("adopts the canonical SDK session id and re-broadcasts status", async () => {
 		const { fake, actor } = makeActor();
 		const events = collect(actor);

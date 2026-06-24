@@ -151,6 +151,10 @@ export class SessionActor {
 		this.ensureStarted();
 		this._messageCount += 1;
 		this._updatedAt = this.deps.now();
+		// Persist the user turn for replay-on-reattach. The live client already shows
+		// it optimistically, so we DON'T broadcast it (that would double it) — we only
+		// keep it in the buffer so a reconnect's replay restores the full exchange.
+		this.bufferOnly({ type: "user_echo", sessionId: this.id, text });
 		this.input.push({ type: "user", message: { role: "user", content: text } });
 		this.setStatus("working");
 	}
@@ -336,9 +340,14 @@ export class SessionActor {
 		this.broadcast(this.statusEvent());
 	}
 
-	private record(event: RenderEvent): void {
+	/** Append to the replay buffer WITHOUT broadcasting (for already-shown events). */
+	private bufferOnly(event: RenderEvent): void {
 		this.buffer.push(event);
 		if (this.buffer.length > this.bufferLimit) this.buffer.shift();
+	}
+
+	private record(event: RenderEvent): void {
+		this.bufferOnly(event);
 		this._updatedAt = this.deps.now();
 		this.broadcast(event);
 	}
