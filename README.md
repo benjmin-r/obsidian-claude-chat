@@ -12,6 +12,26 @@ protocol to a purpose-built Obsidian plugin.
 > **This is self-hosted.** There is no cloud service. You run the server; your
 > devices reach it privately over your tailnet.
 
+## Network use & requirements
+
+**Network use.** The plugin makes exactly one kind of outbound connection: a
+WebSocket to **your own self-hosted server**, at the `ws://` address you enter in
+settings, over your **Tailscale** tailnet. It contacts **no third-party or cloud
+service**, sends **no telemetry or analytics**, and does not self-update. All
+Claude API traffic originates from *your server*, not from the plugin.
+
+**Account / external service required.** Full functionality requires
+infrastructure you run yourself:
+- a host running the bundled **SDK server** with **Claude Code installed and signed
+  in on your Claude subscription** (the server makes the Claude calls), and
+- **Tailscale** on the server and every client device.
+
+Without these the plugin is an empty sidebar — it cannot talk to Claude on its own.
+
+**Unofficial.** This is an independent, community project. It is **not affiliated
+with, endorsed by, or sponsored by Anthropic**. "Claude" is a trademark of
+Anthropic; it is used here only to describe what the plugin connects to.
+
 ## What you need (three components)
 
 1. **The Obsidian plugin** (`packages/plugin`) — installed in each device's vault.
@@ -39,7 +59,6 @@ packages/
   protocol/   PURE shared wire types + SDK→event mapping + destructive predicate
   server/     Agent SDK service (ports-and-adapters; session actors; WS transport)
   plugin/     Obsidian plugin (ItemView chat, bridge client, settings)
-docs/PLAN.md  the design of record
 ```
 
 `plugin` and `server` both import the wire types from `protocol`, so the
@@ -190,8 +209,9 @@ npm run lint        # where configured
 
 **New here (human or AI)?** Read [`AGENTS.md`](AGENTS.md) first — it has the
 architecture invariants and the "anatomy of a feature" checklist (why a serious
-change fans out across protocol → server → plugin layers). See `docs/PLAN.md` for
-the full design rationale and the verified SDK facts.
+change fans out across protocol → server → plugin layers). See
+[`TECHNICAL_DECISIONS.md`](TECHNICAL_DECISIONS.md) for the design rationale and the
+verified SDK facts.
 
 ## Releasing the plugin (GitHub Actions)
 
@@ -209,7 +229,7 @@ git push origin 0.1.0
 The workflow verifies the tag matches the manifest version, then creates the
 release. **Mobile install via BRAT:** in Obsidian (works on iOS/Android), install
 the *BRAT* community plugin, "Add beta plugin", and enter this repo
-(`<owner>/obsidian-claude-chat`) — BRAT pulls the assets from the latest release.
+(`benjmin-r/obsidian-claude-chat`) — BRAT pulls the assets from the latest release.
 `.github/workflows/ci.yml` runs the test suites + build on every push/PR.
 
 ## License

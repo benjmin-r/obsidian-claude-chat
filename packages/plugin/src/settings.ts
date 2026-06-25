@@ -18,8 +18,8 @@ export class ClaudeChatSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "Claude Chat" });
-
+		// No top heading: Obsidian already renders the plugin name as the tab
+		// title, and a single-section tab needs no extra heading.
 		new Setting(containerEl)
 			.setName("Server URL")
 			.setDesc("ws:// address of the Claude SDK server on your tailnet, including port.")
@@ -76,13 +76,12 @@ export class ClaudeChatSettingTab extends PluginSettingTab {
 					.setValue(String(this.plugin.settings.reconnectDelayMs))
 					.onChange(async (value) => {
 						const n = parseInt(value, 10);
-						if (!Number.isNaN(n) && n >= 100) {
+						const valid = !Number.isNaN(n) && n >= 100;
+						if (valid) {
 							this.plugin.settings.reconnectDelayMs = n;
 							await this.plugin.saveSettings();
-							text.inputEl.style.borderColor = "";
-						} else {
-							text.inputEl.style.borderColor = "var(--text-error)";
 						}
+						text.inputEl.toggleClass("occ-input-invalid", !valid);
 					})
 			);
 

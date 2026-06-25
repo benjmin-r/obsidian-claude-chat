@@ -20,59 +20,61 @@ Already satisfying Obsidian guidelines — no action:
   and ends with a period.
 - LICENSE present with clear MIT designation.
 
-Two real code fixes needed before store submission:
+Two real code fixes needed before store submission — both **DONE**:
 
-- `[MUST]` Hardcoded inline styles. `chat-view.ts` (lines ~162, 171, 360, 364, 618,
-  629, 669) and `settings.ts` (82, 84) set `.style.display`, `.style.width`,
-  `.style.borderColor` in JS. The guideline requires styling via CSS classes, not
-  hardcoded in code. Replace the `display` toggles with a class (e.g. `.occ-hidden`),
-  move the width to `styles.css`, and toggle an error class instead of setting
-  `borderColor`.
-- `[MUST]` Settings heading. `settings.ts:21` uses `containerEl.createEl("h2", ...)`.
-  The guideline says use the heading API
-  (`new Setting(containerEl).setName(...).setHeading()`), not an HTML heading — and
-  with a single settings section you likely don't need a top heading at all.
+- `[MUST]` ✅ Hardcoded inline styles. All static `.style.display` / `.style.width` /
+  `.style.borderColor` assignments in `chat-view.ts`, `file-suggest.ts`, and
+  `settings.ts` now toggle CSS classes (`.occ-hidden`, `.occ-input-invalid`,
+  `.occ-modal-input` in `styles.css`). The only remaining `.style.` writes are the
+  runtime-computed keyboard-inset values in `setKeyboardInset()` (element height +
+  two CSS custom properties derived from the live keyboard height) — these are
+  layout values that cannot be a static class and must stay in JS.
+- `[MUST]` ✅ Settings heading. The `createEl("h2", …)` in `settings.ts` was removed
+  (Obsidian renders the plugin name as the tab title; a single-section tab needs no
+  extra heading). The remaining `createEl("h3"/…)` calls are inside Modals, not the
+  SettingTab, so the heading guideline doesn't apply to them.
 
 ## Phase 1 — Ship via BRAT (now)
 
-- `[MUST]` End-to-end smoke test from a clean vault and clean server, following the
+Remaining Phase-1 items need a real device/vault or a maintainer action — they can't
+be done from a headless CI checkout:
+
+- `[MUST]` ⏳ End-to-end smoke test from a clean vault and clean server, following the
   README verbatim. The install steps are the product surface for a self-hosted plugin.
-- `[MUST]` First-run / failure UX: server down, wrong token, Tailscale off, blank URL
+- `[MUST]` ⏳ First-run / failure UX: server down, wrong token, Tailscale off, blank URL
   should each produce a clear message, not a dead sidebar.
-- `[MUST]` Real mobile test (iOS + Android) over the tailnet, since the plugin ships
-  `isDesktopOnly: false`.
-- `[HIGH]` Screenshot or GIF in the README (streaming sidebar + a permission prompt).
-  Highest-leverage adoption item.
-- `[HIGH]` Replace `<owner>/obsidian-claude-chat` placeholders with the real GitHub
-  path so the BRAT instructions are copy-pasteable.
-- `[HIGH]` Cut the tag (`git tag 0.1.0 && git push origin 0.1.0`) and confirm the
-  Release has all three assets and a BRAT install works.
+- `[MUST]` ⏳ Real mobile test (iOS + Android) over the tailnet, since the plugin ships
+  `isDesktopOnly: false`. (iPad on-screen keyboard and Android keyboard are still
+  unverified with the final keyboard fix — see the handoff notes.)
+- `[HIGH]` ⏳ Screenshot or GIF in the README (streaming sidebar + a permission prompt).
+  Highest-leverage adoption item. (Needs a running instance to capture.)
+- `[HIGH]` ✅ Replace `<owner>/obsidian-claude-chat` placeholders with the real GitHub
+  path (`benjmin-r/obsidian-claude-chat`) so the BRAT instructions are copy-pasteable.
+- `[HIGH]` ⏳ Cut the tag (`git tag 0.1.0 && git push origin 0.1.0`) and confirm the
+  Release has all three assets and a BRAT install works. (Maintainer action — pushing a
+  tag triggers the release workflow; not done autonomously.)
 - `[OPTIONAL]` `CHANGELOG.md` — skip for 0.1.
 
 ## Phase 2 — Community store submission
 
 Required by the Developer Policies / Submission requirements:
 
-- `[MUST]` Network-use disclosure in the README. Policy requires clearly stating
-  network usage and which remote services are used. The architecture is documented,
-  but add an explicit, labeled "Network use" statement: the plugin connects only to
-  the user's self-hosted server over their tailnet; no third-party/cloud service; no
-  telemetry.
-- `[MUST]` Self-hosted-server / account requirement disclosure. Policy requires
-  disclosing when full functionality needs an external account or service. State
-  plainly that it requires a user-run server with an authenticated Claude subscription
-  and Tailscale.
-- `[MUST]` Apply the two code fixes above (inline styles, settings heading).
-- `[MUST]` Confirm `manifest.description` is action-oriented, <=250 chars, ends with a
-  period, no special characters. It qualifies; consider rephrasing to lead with the
-  action.
-- `[MUST]` Do not add a `fundingUrl` unless donations are actually accepted (policy
-  says include it only then). Currently absent — fine.
-- `[HIGH]` (Obsidian-optional, recommended) Add an "unofficial" disclaimer for the
-  Claude/Anthropic name. Obsidian's policy only restricts confusing use of the
-  *Obsidian* trademark (clear there), but stating "not affiliated with Anthropic"
-  avoids implying endorsement.
-- `[HIGH]` Fill `authorUrl` and make `author` the full name (matches the LICENSE).
+- `[MUST]` ✅ Network-use disclosure in the README. Added a labeled "Network use &
+  requirements" section: the plugin connects only to the user's self-hosted server
+  over their tailnet; no third-party/cloud service; no telemetry.
+- `[MUST]` ✅ Self-hosted-server / account requirement disclosure. Same README section
+  states plainly that full functionality requires a user-run server with an
+  authenticated Claude subscription and Tailscale.
+- `[MUST]` ✅ Apply the two code fixes above (inline styles, settings heading).
+- `[MUST]` ✅ Confirm `manifest.description` is action-oriented, <=250 chars, ends with
+  a period, no special characters. Rephrased to lead with the action ("Chat with
+  Claude in a structured sidebar, …").
+- `[MUST]` ✅ Do not add a `fundingUrl` unless donations are actually accepted. Still
+  absent — fine.
+- `[HIGH]` ✅ (Obsidian-optional, recommended) Added an "Unofficial" disclaimer in the
+  README ("not affiliated with, endorsed by, or sponsored by Anthropic").
+- `[HIGH]` ✅ Filled `authorUrl` (`https://github.com/benjmin-r`) and set `author` to
+  the full name "Benjamin Reitzammer" (matches the LICENSE).
 
 Submission process (from the docs):
 

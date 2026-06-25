@@ -250,17 +250,15 @@ export class ChatView extends ItemView {
 		this.activityIconEl = status.createSpan({ cls: "occ-status-icon" });
 		this.activityIconEl.addEventListener("click", () => this.openStatusLegend());
 
-		this.pickerEl = root.createDiv({ cls: "occ-picker" });
-		this.pickerEl.style.display = "none";
+		this.pickerEl = root.createDiv({ cls: "occ-picker occ-hidden" });
 		this.todosEl = root.createEl("ul", { cls: "occ-todos" });
 
 		const messagesWrap = root.createDiv({ cls: "occ-messages-wrap" });
 		this.messagesEl = messagesWrap.createDiv({ cls: "occ-messages" });
 		this.messagesInnerEl = this.messagesEl.createDiv({ cls: "occ-messages-inner" });
-		this.scrollPillEl = messagesWrap.createDiv({ cls: "occ-scroll-pill" });
+		this.scrollPillEl = messagesWrap.createDiv({ cls: "occ-scroll-pill occ-hidden" });
 		setIcon(this.scrollPillEl, "chevron-down");
 		this.scrollPillEl.createSpan({ text: "Latest" });
-		this.scrollPillEl.style.display = "none";
 		this.scrollPillEl.addEventListener("click", () => this.scrollToBottom());
 		this.registerDomEvent(this.messagesEl, "scroll", () => {
 			const top = this.messagesEl.scrollTop;
@@ -712,11 +710,11 @@ export class ChatView extends ItemView {
 	}
 
 	private updateScrollPill(): void {
-		this.scrollPillEl.style.display = this.isNearBottom() ? "none" : "";
+		this.scrollPillEl.toggleClass("occ-hidden", this.isNearBottom());
 	}
 
 	private renderPicker(): void {
-		this.pickerEl.style.display = this.pickerOpen ? "" : "none";
+		this.pickerEl.toggleClass("occ-hidden", !this.pickerOpen);
 		if (!this.pickerOpen) return;
 		this.pickerEl.empty();
 
@@ -1030,7 +1028,7 @@ export class ChatView extends ItemView {
 
 		// Full detail, hidden until expanded.
 		const body = el.createDiv({ cls: "occ-tool-body" });
-		body.style.display = expanded ? "" : "none";
+		body.toggleClass("occ-hidden", !expanded);
 		if (inputStr) body.createEl("pre", { cls: "occ-tool-input", text: inputStr });
 		if (entry.result) {
 			const c = entry.result.content;
@@ -1041,7 +1039,7 @@ export class ChatView extends ItemView {
 			const open = !this.expandedTools.has(entry.toolUseId);
 			if (open) this.expandedTools.add(entry.toolUseId);
 			else this.expandedTools.delete(entry.toolUseId);
-			body.style.display = open ? "" : "none";
+			body.toggleClass("occ-hidden", !open);
 			setIcon(chevron, open ? "chevron-down" : "chevron-right");
 		});
 	}
@@ -1093,11 +1091,10 @@ class RenameModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.createEl("h3", { text: "Rename session" });
-		const input = contentEl.createEl("input");
+		const input = contentEl.createEl("input", { cls: "occ-modal-input" });
 		input.type = "text";
 		input.value = this.current;
 		input.placeholder = "Session title";
-		input.style.width = "100%";
 
 		const submit = (): void => {
 			const value = input.value.trim();
