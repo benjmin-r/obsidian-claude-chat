@@ -39,8 +39,8 @@ Enable **Claude Chat** under *Settings → Community plugins*.
 - Assistant text and thinking stream in live. Tool calls and their results render
   as blocks; the TodoWrite list renders above the transcript.
 - Destructive tools (deletes, overwrites) pause for an **Allow / Deny** prompt.
-- The badges show the connection state and session status; a *(mirroring)* note
-  appears when another client holds the writer role for the session.
+- The status icons show the connection state and session activity; an **eye** icon
+  marks a read-only view (another client holds the writer role for the session).
 
 ## Internals
 

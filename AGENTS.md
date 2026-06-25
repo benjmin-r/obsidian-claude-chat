@@ -169,7 +169,7 @@ doesn't contradict an entry (if it does, surface the conflict).
 
 ## More docs
 
-- `TECHNICAL_DECISIONS.md` — the decision log (why things are the way they are).
-- `docs/PLAN.md` — the design of record + verified SDK facts.
-- `docs/TESTING.md` — the PoC test walkthrough, known limitations, feedback template.
+- `TECHNICAL_DECISIONS.md` — the decision log (why things are the way they are) +
+  verified SDK facts.
 - `README.md` — what it is, the components, and setup.
+- `docs/LAUNCH_CHECKLIST.md` — the 0.1.0 release checklist.

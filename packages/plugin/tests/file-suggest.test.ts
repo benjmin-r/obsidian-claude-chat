@@ -164,6 +164,6 @@ describe("FileSuggest", () => {
 		suggest.close();
 		expect(suggest.isOpen()).toBe(false);
 		const el = container.querySelector(".occ-file-suggest") as HTMLElement;
-		expect(el.style.display).toBe("none");
+		expect(el.classList.contains("occ-hidden")).toBe(true);
 	});
 });

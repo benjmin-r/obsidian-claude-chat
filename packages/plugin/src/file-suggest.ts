@@ -61,8 +61,7 @@ export class FileSuggest {
 		private readonly input: HTMLTextAreaElement,
 		container: HTMLElement
 	) {
-		this.el = container.createDiv({ cls: "occ-file-suggest" });
-		this.el.style.display = "none";
+		this.el = container.createDiv({ cls: "occ-file-suggest occ-hidden" });
 		this.input.addEventListener("input", () => this.onInput());
 		// Close shortly after blur, but late enough that an item mousedown lands first.
 		this.input.addEventListener("blur", () => {
@@ -82,7 +81,7 @@ export class FileSuggest {
 		if (!this.opened) return;
 		this.opened = false;
 		this.mention = null;
-		this.el.style.display = "none";
+		this.el.addClass("occ-hidden");
 		this.el.empty();
 	}
 
@@ -180,6 +179,6 @@ export class FileSuggest {
 				this.accept();
 			});
 		});
-		this.el.style.display = "";
+		this.el.removeClass("occ-hidden");
 	}
 }

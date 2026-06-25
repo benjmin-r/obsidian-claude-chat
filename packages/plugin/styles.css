@@ -1,5 +1,22 @@
 /* Claude Chat sidebar */
 
+/* Utility: hide an element via a class instead of a hardcoded inline style.
+   `!important` so it overrides a base rule's own `display` (e.g. inline-flex). */
+.occ-hidden {
+	display: none !important;
+}
+
+/* Invalid text input (e.g. an out-of-range reconnect delay): flag via a class
+   rather than setting `style.borderColor` in JS. */
+.occ-input-invalid {
+	border-color: var(--text-error) !important;
+}
+
+/* Full-width modal text input (Rename session). */
+.occ-modal-input {
+	width: 100%;
+}
+
 .occ-chat {
 	display: flex;
 	flex-direction: column;
