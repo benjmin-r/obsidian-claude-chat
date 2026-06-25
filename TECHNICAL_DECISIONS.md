@@ -2,7 +2,86 @@
 
 This file tracks significant technical decisions made during development, using a
 simplified ADR format. Entries are in reverse chronological order (newest first).
-Each entry is ≤200 words.
+Each entry is ≤200 words (longer when a hard-won investigation is worth preserving).
+
+---
+
+## TDL-20260625-001: Mobile on-screen-keyboard composer positioning
+
+**Date:** 2026-06-25
+**Status:** Implemented
+
+**Context:** On the iOS app the composer left a large block of dead space below it
+whenever the on-screen keyboard was up, and the message area collapsed. The
+composer stayed *functional* (above the keyboard) but looked broken. The root
+cause took a long investigation because Obsidian's iOS webview presents the
+keyboard in the **native layer**, invisible to the web: with the keyboard open we
+measured `window.innerHeight`, `visualViewport.height`, `100dvh`, `100svh`,
+`document.documentElement.clientHeight` and `screen.height` *all* still reporting
+the full 812px, and `env(keyboard-inset-height)` reporting `0`. Yet WebKit
+internally compresses our flex layout (the messages area shrank 453→177px and the
+composer lifted) — so the keyboard affects layout but exposes no value to read.
+
+**What we ruled out (each verified on-device, not theorised):**
+
+- **Height-chain / flex-fill CSS** (force `.workspace-leaf-content` into a
+  full-height flex column, `flex:1 1 auto` on `.view-content`). No effect — the
+  height chain was never the problem; the view already filled its leaf.
+- **`visualViewport` sizing.** `vv.height` stays 812 with the keyboard up, so
+  there is nothing to react to.
+- **`interactive-widget=resizes-content`** on the viewport `<meta>`. Applied
+  successfully (confirmed in the computed meta) but Obsidian's WKWebView ignores
+  it — `vv` still 812.
+- **`env(keyboard-inset-height)` / VirtualKeyboard API.** Chromium-only;
+  `navigator.virtualKeyboard` is absent in iOS WebKit, so the env var is always 0.
+- **Explicitly sizing the container** to `innerHeight − keyboardHeight − top`
+  (once we had the height; see below). *Necessary but not sufficient:* even in a
+  correctly-sized 418px box the composer floated to the top (`rowB=140`), because
+  **`flex:1` does not distribute free space while the keyboard is up in this
+  webview.** This is the key non-obvious fact — any layout that relies on
+  flex-grow to push the composer down is doomed here. (`margin-top:auto` is no
+  escape: auto margins out-rank flex-grow and would break the normal-case fill.)
+
+Kept from an earlier pass (orthogonal, still useful): `:empty { display:none }`
+on the todos/permission/activity slots, which removed dead space in *empty*
+sessions but not the keyboard case.
+
+**Decision:** Two parts.
+
+1. **Get the keyboard height from the native bridge.** Obsidian's mobile shell
+   (Capacitor/cordova-ionic-keyboard) dispatches `keyboardWillShow` /
+   `keyboardDidShow` / `keyboardWillHide` / `keyboardDidHide` on `window`, and the
+   show events carry `e.keyboardHeight` in px. This is the *only* reliable signal
+   and it does fire for plugins (measured `keyboardHeight=344`). It is
+   undocumented for Obsidian plugin authors, so treat it as best-effort: if the
+   events never fire, nothing breaks (we just keep the normal layout).
+
+2. **Lay the composer out explicitly while the keyboard is open**, instead of
+   trusting flexbox. On show we set `.view-content` height to
+   `innerHeight − keyboardHeight − top` (so it ends exactly at the keyboard top —
+   this also absorbs the ~110px of Obsidian bottom chrome automatically, since
+   `top` and `innerHeight` are real) and add `.occ-kb-open`. That class switches
+   to absolute positioning: the composer is pinned `bottom: 8px`, and the messages
+   become a definite, scrollable band via `top: var(--occ-msg-top)` /
+   `bottom: var(--occ-msg-bottom)` (toolbar height + 8, composer height + 18, set
+   from JS). On hide we strip the class, height, and vars — reverting to the
+   normal flex layout that works fine on desktop and when the keyboard is down.
+
+**Consequences:**
+
+- Depends on an **undocumented** Obsidian/Capacitor `window` keyboard event. If a
+  future Obsidian release stops firing it, the composer reverts to the (still
+  usable, just gappy) flex behaviour — no hard failure.
+- The explicit absolute layout is **mobile-keyboard-only**; desktop and
+  keyboard-down are untouched.
+- Edge cases while the keyboard is open and a permission prompt / session picker
+  appears are not specially handled (those slots are in normal flow behind the
+  absolute composer); rare enough to defer.
+- Spacing is two literals (`bottom: 8px`, messages `+18px`); tune if the feel is
+  off.
+
+**Files:** `plugin/src/chat-view.ts` (`setKeyboardInset`, the `keyboard*` window
+listeners), `plugin/styles.css` (`.occ-kb-open` rules).
 
 ---
 

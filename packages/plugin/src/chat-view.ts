@@ -175,6 +175,19 @@ export class ChatView extends ItemView {
 		// `@`-mention file autocomplete on the composer.
 		this.fileSuggest = new FileSuggest(this.app, this.inputEl, this.inputRowEl);
 
+		// On-screen keyboard: iOS/Obsidian present it natively with no standard web
+		// signal (visualViewport/dvh/env all stay full-height). The native bridge does
+		// fire keyboard events on `window` carrying the pixel height — use that to size
+		// the view to the area above the keyboard so the composer pins just above it.
+		const onShow = (e: Event): void => this.setKeyboardInset(Number((e as { keyboardHeight?: number }).keyboardHeight ?? 0));
+		const onHide = (): void => this.setKeyboardInset(0);
+		for (const ev of ["keyboardWillShow", "keyboardDidShow"]) {
+			this.registerDomEvent(window as Window, ev as keyof WindowEventMap, onShow as EventListener);
+		}
+		for (const ev of ["keyboardWillHide", "keyboardDidHide"]) {
+			this.registerDomEvent(window as Window, ev as keyof WindowEventMap, onHide as EventListener);
+		}
+
 		this.render();
 	}
 
@@ -274,6 +287,36 @@ export class ChatView extends ItemView {
 				this.sendCurrent();
 			}
 		});
+	}
+
+	/**
+	 * Size the view to the space above the on-screen keyboard so the composer pins
+	 * just above it. `keyboardHeight` (px) comes from the native bridge event; 0
+	 * clears the override (keyboard hidden → back to the CSS full-height).
+	 */
+	private setKeyboardInset(keyboardHeight: number): void {
+		const cc = this.contentEl;
+		if (keyboardHeight > 0) {
+			const top = cc.getBoundingClientRect().top;
+			const avail = Math.max(160, window.innerHeight - keyboardHeight - top);
+			cc.style.height = `${avail}px`;
+			// `flex:1` doesn't distribute space while the keyboard is up in this webview,
+			// so the composer won't pin to the bottom on its own. Lay the view out
+			// explicitly: composer absolute at the bottom, messages a definite scroll
+			// band between the toolbar and the composer (see the .occ-kb-open CSS).
+			const toolbar = cc.querySelector(".occ-toolbar") as HTMLElement | null;
+			cc.style.setProperty("--occ-msg-top", `${(toolbar?.offsetHeight ?? 48) + 8}px`);
+			// Composer sits `bottom: 8px` above the keyboard; leave another ~10px between
+			// it and the messages band so neither edge feels cramped.
+			cc.style.setProperty("--occ-msg-bottom", `${this.inputRowEl.offsetHeight + 18}px`);
+			cc.addClass("occ-kb-open");
+		} else {
+			cc.style.height = "";
+			cc.removeClass("occ-kb-open");
+			cc.style.removeProperty("--occ-msg-top");
+			cc.style.removeProperty("--occ-msg-bottom");
+		}
+		if (this.stickBottom) this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 	}
 
 	private startNewSession(): void {

@@ -4,7 +4,30 @@
 	display: flex;
 	flex-direction: column;
 	height: 100%;
+	min-height: 0;
 	gap: 8px;
+}
+
+/* On-screen keyboard (mobile): flex-grow stops distributing space, so lay the
+   composer + messages out explicitly. `.occ-kb-open` + the inset CSS vars are set
+   from the native keyboard event (see chat-view setKeyboardInset). The view is
+   sized to end at the keyboard top; the composer pins to that bottom and the
+   messages become a definite, scrollable band above it. */
+.occ-chat.occ-kb-open {
+	position: relative;
+}
+.occ-chat.occ-kb-open .occ-messages-wrap {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: var(--occ-msg-top, 56px);
+	bottom: var(--occ-msg-bottom, 64px);
+}
+.occ-chat.occ-kb-open .occ-input-row {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 8px;
 }
 
 /* Single-row toolbar that never wraps to a second line on mobile. */
