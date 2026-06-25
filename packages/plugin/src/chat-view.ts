@@ -523,25 +523,37 @@ export class ChatView extends ItemView {
 				.setTitle("Copy resume command & close session")
 				.setIcon("terminal")
 				.onClick(() => {
-					this.copyToClipboard(`claude --resume ${sessionId}`, "Resume command copied — chat reset for the terminal");
-					this.closeCurrentSession(); // hand off to the terminal: return to empty state
+					this.copyToClipboard(`claude --resume ${sessionId}`, "Resume command copied — session closed for the terminal");
+					this.closeSession(sessionId); // hand off to the terminal: release it
 				})
+		);
+		menu.addItem((i) =>
+			i
+				.setTitle("Close session")
+				.setIcon("log-out")
+				.onClick(() => this.closeSession(sessionId))
 		);
 		menu.addItem((i) => i.setTitle("Rename…").setIcon("pencil").onClick(() => this.openRename(sessionId, currentTitle)));
 		menu.addItem((i) => i.setTitle("Delete…").setIcon("trash-2").onClick(() => this.confirmDelete(sessionId, label)));
 		menu.showAtMouseEvent(evt);
 	}
 
-	/** Detach from the loaded session (back to empty state) and release it server-side. */
-	private closeCurrentSession(): void {
-		this.pickerOpen = false;
-		const sid = this.state.sessionId;
-		if (sid) this.client.closeSession(sid);
-		this.client.setAttachTarget(undefined); // don't re-attach on reconnect
-		this.pendingText = undefined;
-		this.currentTitle = undefined;
-		this.updateTabTitle();
-		this.state = { ...initialState(this.selectedModel), connection: this.state.connection };
+	/**
+	 * Release a session server-side (frees the writer lock; does NOT delete the
+	 * store). If it's the session we're viewing, also detach back to the empty
+	 * state; otherwise just refresh the picker so its status reflects the release.
+	 */
+	private closeSession(sessionId: string): void {
+		this.client.closeSession(sessionId);
+		if (sessionId === this.state.sessionId) {
+			this.pickerOpen = false;
+			this.client.setAttachTarget(undefined); // don't re-attach on reconnect
+			this.pendingText = undefined;
+			this.currentTitle = undefined;
+			this.updateTabTitle();
+			this.state = { ...initialState(this.selectedModel), connection: this.state.connection };
+		}
+		this.refreshSessions();
 		this.render();
 	}
 
