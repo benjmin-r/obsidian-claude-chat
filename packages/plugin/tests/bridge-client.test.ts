@@ -235,4 +235,29 @@ describe("BridgeClient", () => {
 		h.last().fireOpen();
 		expect(h.client.isConnected()).toBe(true);
 	});
+
+	it("surfaces a clear error for a blank URL instead of constructing a socket", () => {
+		const h = makeClient({ url: "   " });
+		h.client.connect();
+		expect(FakeWs.instances).toHaveLength(0); // never attempted `new WebSocket("")`
+		expect(h.states).toEqual(["disconnected"]); // no "connecting"
+		expect(h.events).toContainEqual({
+			type: "error",
+			message: "No server URL configured — set it in the Claude Chat settings.",
+		});
+		expect(h.scheduled).toHaveLength(0); // no reconnect — user must fix settings
+	});
+
+	it("surfaces an error (and does not throw) when the socket constructor throws", () => {
+		const h = makeClient({
+			url: "not-a-ws-url",
+			createSocket: () => {
+				throw new Error("invalid URL");
+			},
+		});
+		expect(() => h.client.connect()).not.toThrow();
+		expect(h.states).toEqual(["connecting", "disconnected"]);
+		expect(h.events.some((e) => e.type === "error")).toBe(true);
+		expect(h.scheduled).toHaveLength(0); // malformed URL won't fix itself by retrying
+	});
 });

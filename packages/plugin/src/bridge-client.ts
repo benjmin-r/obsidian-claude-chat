@@ -71,8 +71,26 @@ export class BridgeClient {
 		this.intentionalClose = false;
 		this.cancelReconnect();
 		this.stopHeartbeat();
+
+		// A blank or malformed URL can't be connected to: `new WebSocket("")` (or an
+		// invalid scheme/host) throws synchronously. Surface a clear, actionable error
+		// and stay disconnected instead of letting the exception escape connect() — an
+		// uncaught throw here leaves the sidebar dead with no message. No reconnect: the
+		// user has to fix the server URL in settings first, so retrying is pointless noise.
+		if (!this.opts.url.trim()) {
+			this.opts.onStateChange("disconnected");
+			this.opts.onEvent({ type: "error", message: "No server URL configured — set it in the Claude Chat settings." });
+			return;
+		}
 		this.opts.onStateChange("connecting");
-		const ws = this.opts.createSocket(this.opts.url);
+		let ws: WsLike;
+		try {
+			ws = this.opts.createSocket(this.opts.url);
+		} catch {
+			this.opts.onStateChange("disconnected");
+			this.opts.onEvent({ type: "error", message: `Invalid server URL — check it in the Claude Chat settings: ${this.opts.url}` });
+			return;
+		}
 		this.ws = ws;
 		ws.onopen = () => this.onOpen();
 		ws.onclose = () => this.onClose();

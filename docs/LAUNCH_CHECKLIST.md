@@ -42,7 +42,9 @@ be done from a headless CI checkout:
 - `[MUST]` ⏳ End-to-end smoke test from a clean vault and clean server, following the
   README verbatim. The install steps are the product surface for a self-hosted plugin.
 - `[MUST]` ⏳ First-run / failure UX: server down, wrong token, Tailscale off, blank URL
-  should each produce a clear message, not a dead sidebar.
+  should each produce a clear message, not a dead sidebar. (Blank/malformed URL is now
+  guarded in code — `BridgeClient.connect()` emits a clear error instead of throwing,
+  with tests; the rest still needs a manual pass on a real device.)
 - `[MUST]` ⏳ Real mobile test (iOS + Android) over the tailnet, since the plugin ships
   `isDesktopOnly: false`. (iPad on-screen keyboard and Android keyboard are still
   unverified with the final keyboard fix — see the handoff notes.)
