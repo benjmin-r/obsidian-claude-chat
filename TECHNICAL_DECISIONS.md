@@ -6,6 +6,43 @@ Each entry is ≤200 words (longer when a hard-won investigation is worth preser
 
 ---
 
+## TDL-20260626-001: Per-platform keyboard layout (iPhone vs iPad), and a settings-gated debug panel
+
+**Date:** 2026-06-26
+**Status:** Implemented (extends TDL-20260625-001)
+
+**Context:** TDL-20260625-001 made the composer track the keyboard, but real on-device
+testing (iPhone + iPad over the tailnet) showed iPhone and iPad need **opposite**
+strategies, plus two adjacent layout bugs. Diagnosed with a custom on-screen "Copy KB"
+debug panel (reporter taps it, pastes a geometry report) — kept as a feature, see below.
+
+**Findings (each measured, not theorised):**
+
+- **Shared:** `window.innerHeight` stays full with the keyboard up; only the native
+  `keyboardWillShow/DidShow` events expose the height; real keyboard top =
+  `innerHeight − keyboardHeight`.
+- **iPhone:** the leaf stays full-height, so the app must carve out the space.
+  `setKeyboardInset` pins `contentEl` height (`height`+`min`+`max`+`flex:none`) and uses
+  the `.occ-kb-open` `bottom`-anchored absolute layout. The pin **is** honored.
+- **iPad:** the leaf is resized by iPadOS (parent `ph` drops by exactly `keyboardHeight`),
+  but `innerHeight` stays full **and** iPad WebKit refuses to shrink `contentEl` below its
+  ~content-min (`usedH` exceeds our `maxH`). So the iPhone pin fails. `setKeyboardInsetTablet`
+  (`Platform.isTablet`) instead anchors by **`top`** off the two stable values
+  (`contentEl.top`, computed keyboard top) → `.occ-kb-tablet`, composer 16px above the kb,
+  12px side insets, `overflow:hidden`.
+- **Toolbar collapse (looked like "squished icons"):** `.occ-toolbar { overflow:hidden }`
+  set its flex auto-min-size to 0, so it collapsed to ~9px under the keyboard relayout and
+  clipped the (correct 18×18) icons. Fix: `flex: 0 0 auto`. Not a raster bug — translateZ /
+  forced-repaint hacks were tried and reverted.
+- **iPhone composer hidden in the main tab view:** Obsidian's `.mobile-navbar` (~52px)
+  floats over the **main-area** leaf (not sidebars). Fix: a bottom inset gated on
+  `occ-phone-main`, set only when `leaf.getRoot() === workspace.rootSplit`, keyboard-down only.
+
+**Debug panel:** a "Copy KB" report behind the `debugKeyboardPanel` setting (default off).
+Full field reference + platform model + resolved-gotcha catalogue:
+`docs/MOBILE_KEYBOARD_DEBUG.md` (LLM audience). Kept so remote issue-reporters on devices
+we can't reach can produce a report.
+
 ## TDL-20260625-001: Mobile on-screen-keyboard composer positioning
 
 **Date:** 2026-06-25
