@@ -132,6 +132,16 @@ export function addIcon(_id: string, _svg: string): void {
 	// no-op
 }
 
+export const Platform = {
+	isDesktop: true,
+	isMobile: false,
+	isMobileApp: false,
+	isIosApp: false,
+	isAndroidApp: false,
+	isPhone: false,
+	isTablet: false,
+};
+
 export class App {
 	vault = {
 		adapter: {

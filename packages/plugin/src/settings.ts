@@ -85,5 +85,17 @@ export class ClaudeChatSettingTab extends PluginSettingTab {
 						}
 					})
 			);
+
+		new Setting(containerEl)
+			.setName("Keyboard debug panel")
+			.setDesc(
+				"Show a 'Copy KB' button that copies an on-screen-keyboard layout report to the clipboard. For diagnosing mobile keyboard/layout issues. Reopen the chat view after changing."
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.debugKeyboardPanel).onChange(async (value) => {
+					this.plugin.settings.debugKeyboardPanel = value;
+					await this.plugin.saveSettings();
+				})
+			);
 	}
 }

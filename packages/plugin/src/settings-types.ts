@@ -15,6 +15,12 @@ export interface ClaudeChatSettings {
 	autoReconnect: boolean;
 	/** Base backoff in ms between reconnect attempts. */
 	reconnectDelayMs: number;
+	/**
+	 * Show the on-screen-keyboard debug panel (a "Copy KB" button that copies a layout
+	 * report to the clipboard). Off by default; enable to diagnose mobile keyboard/layout
+	 * issues — see docs/MOBILE_KEYBOARD_DEBUG.md.
+	 */
+	debugKeyboardPanel: boolean;
 }
 
 export const DEFAULT_SETTINGS: ClaudeChatSettings = {
@@ -23,6 +29,7 @@ export const DEFAULT_SETTINGS: ClaudeChatSettings = {
 	defaultModel: "claude-opus-4-8",
 	autoReconnect: true,
 	reconnectDelayMs: 1500,
+	debugKeyboardPanel: false,
 };
 
 /** Models offered in the new-session dropdown. */

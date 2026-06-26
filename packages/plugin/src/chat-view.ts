@@ -1,4 +1,4 @@
-import { App, ItemView, MarkdownRenderer, Menu, Modal, Notice, setIcon, type WorkspaceLeaf } from "obsidian";
+import { App, ItemView, MarkdownRenderer, Menu, Modal, Notice, Platform, setIcon, type WorkspaceLeaf } from "obsidian";
 import type { BridgeEvent, PermissionMode } from "@occ/protocol";
 import type ClaudeChatPlugin from "./main";
 import { BridgeClient, type WsLike } from "./bridge-client";
@@ -95,6 +95,14 @@ export class ChatView extends ItemView {
 	private currentTitle: string | undefined;
 	private tabTitle = "Claude Chat";
 
+	// On-screen-keyboard debug panel state (gated behind the debugKeyboardPanel setting).
+	private kbDebugEl?: HTMLElement;
+	private kbDebugTimer?: number;
+	private kbLog: string[] = [];
+	private kbHistory: string[] = [];
+	private kbStartMs = 0;
+	private kbLastHeight = 0;
+
 	constructor(
 		leaf: WorkspaceLeaf,
 		private readonly plugin: ClaudeChatPlugin
@@ -127,6 +135,10 @@ export class ChatView extends ItemView {
 
 	async onOpen(): Promise<void> {
 		this.buildDom();
+		// The iPhone navbar inset (styles.css) only applies to a main-area leaf, not a
+		// sidebar (which has its own bottom toolbar). Re-evaluate if the leaf is moved.
+		this.updateLeafLocationClass();
+		this.registerEvent(this.app.workspace.on("layout-change", () => this.updateLeafLocationClass()));
 		this.client = new BridgeClient({
 			url: this.plugin.settings.serverUrl,
 			token: this.plugin.settings.token,
@@ -188,11 +200,15 @@ export class ChatView extends ItemView {
 			this.registerDomEvent(window as Window, ev as keyof WindowEventMap, onHide as EventListener);
 		}
 
+		if (this.plugin.settings.debugKeyboardPanel) this.mountKbDebug();
+
 		this.render();
 	}
 
 	async onClose(): Promise<void> {
 		if (this.sessionsRefreshTimer !== undefined) window.clearTimeout(this.sessionsRefreshTimer);
+		if (this.kbDebugTimer !== undefined) window.clearTimeout(this.kbDebugTimer);
+		this.kbDebugEl?.remove();
 		this.resizeObserver?.disconnect();
 		this.client?.disconnect();
 	}
@@ -294,12 +310,43 @@ export class ChatView extends ItemView {
 	 * just above it. `keyboardHeight` (px) comes from the native bridge event; 0
 	 * clears the override (keyboard hidden → back to the CSS full-height).
 	 */
+	/** True when this view's leaf lives in the main editor area (not a left/right sidebar). */
+	private isInMainArea(): boolean {
+		try {
+			return this.leaf.getRoot() === this.app.workspace.rootSplit;
+		} catch {
+			return false;
+		}
+	}
+
+	/**
+	 * Toggle `occ-phone-main`, which drives the bottom navbar inset in styles.css. On
+	 * iPhone, Obsidian's mobile navbar overlaps only the main-area leaf; a sidebar leaf
+	 * has its own bottom toolbar and must NOT get the inset.
+	 */
+	private updateLeafLocationClass(): void {
+		this.contentEl.toggleClass("occ-phone-main", Platform.isPhone && this.isInMainArea());
+	}
+
 	private setKeyboardInset(keyboardHeight: number): void {
+		// iPad needs a different strategy than iPhone (see setKeyboardInsetTablet).
+		if (Platform.isTablet) {
+			this.setKeyboardInsetTablet(keyboardHeight);
+			return;
+		}
 		const cc = this.contentEl;
 		if (keyboardHeight > 0) {
 			const top = cc.getBoundingClientRect().top;
 			const avail = Math.max(160, window.innerHeight - keyboardHeight - top);
+			// Pin the height hard. `height` alone is not honoured here: contentEl is a
+			// flex item, and on the iPad OSK it springs back to its content's min size
+			// (~510px measured), leaving the composer behind the keyboard. Setting
+			// min/max-height to the same value (and flex:none) defeats both the
+			// min-content floor and any flex-grow stretch so the box is exactly `avail`.
 			cc.style.height = `${avail}px`;
+			cc.style.minHeight = `${avail}px`;
+			cc.style.maxHeight = `${avail}px`;
+			cc.style.flex = "none";
 			// `flex:1` doesn't distribute space while the keyboard is up in this webview,
 			// so the composer won't pin to the bottom on its own. Lay the view out
 			// explicitly: composer absolute at the bottom, messages a definite scroll
@@ -312,11 +359,160 @@ export class ChatView extends ItemView {
 			cc.addClass("occ-kb-open");
 		} else {
 			cc.style.height = "";
+			cc.style.minHeight = "";
+			cc.style.maxHeight = "";
+			cc.style.flex = "";
 			cc.removeClass("occ-kb-open");
 			cc.style.removeProperty("--occ-msg-top");
 			cc.style.removeProperty("--occ-msg-bottom");
 		}
 		if (this.stickBottom) this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+	}
+
+	/**
+	 * iPad keyboard layout. The iPhone strategy (pin contentEl's height, compose with
+	 * `bottom`-anchored absolutes) doesn't work here: iPad WebKit refuses to shrink
+	 * contentEl below its ~510px content floor, so its bottom edge sits behind the
+	 * keyboard and anything anchored to it (or to `flex:1`) lands wrong — the composer
+	 * either hides behind the keyboard or floats up under the toolbar.
+	 *
+	 * What IS stable on iPad: contentEl's TOP (134px, measured) and the real keyboard
+	 * top (`innerHeight - keyboardHeight`; visualViewport is inert so we compute it).
+	 * So anchor everything by `top` instead of `bottom`: place the composer's top so its
+	 * bottom lands just above the keyboard, and give the messages a definite band above
+	 * it. `overflow:hidden` clips the dead contentEl area that hangs behind the keyboard.
+	 */
+	private setKeyboardInsetTablet(keyboardHeight: number): void {
+		const cc = this.contentEl;
+		if (keyboardHeight > 0) {
+			const ccTop = cc.getBoundingClientRect().top;
+			const kbTop = window.innerHeight - keyboardHeight; // real keyboard top (px)
+			const toolbar = cc.querySelector(".occ-toolbar") as HTMLElement | null;
+			const toolbarH = toolbar?.offsetHeight ?? 48;
+			const compH = this.inputRowEl.offsetHeight;
+			const bandTop = toolbarH + 8;
+			// Composer top, in contentEl-relative px, so its bottom sits `gap` above the
+			// kb. 16px (not 8) keeps the input's rounded corner clear of the keyboard edge.
+			const gap = 16;
+			const composerTop = Math.max(bandTop, kbTop - ccTop - compH - gap);
+			const bandHeight = Math.max(80, composerTop - bandTop - 10);
+			cc.style.setProperty("--occ-msg-top", `${bandTop}px`);
+			cc.style.setProperty("--occ-band-height", `${bandHeight}px`);
+			cc.style.setProperty("--occ-composer-top", `${composerTop}px`);
+			cc.addClass("occ-kb-tablet");
+		} else {
+			cc.removeClass("occ-kb-tablet");
+			cc.style.removeProperty("--occ-msg-top");
+			cc.style.removeProperty("--occ-band-height");
+			cc.style.removeProperty("--occ-composer-top");
+		}
+		if (this.stickBottom) this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+	}
+
+	// --- on-screen-keyboard debug panel (gated behind the debugKeyboardPanel setting) ---
+	// Diagnoses mobile keyboard/layout issues on devices the maintainer can't reach. A
+	// small "Copy KB" button (top-right, clear of the status bar and above the keyboard)
+	// copies a text layout report to the clipboard, which an issue reporter pastes back.
+	// A rolling history of geometry snapshots (every 500ms + on each keyboard event) keeps
+	// the keyboard-UP frames. Field reference + platform model: docs/MOBILE_KEYBOARD_DEBUG.md.
+	// Inline styles are intentional here (throwaway debug DOM, not part of the styled UI).
+	private mountKbDebug(): void {
+		// Record raw keyboard events (name + reported height) so we can see whether the
+		// iPad OSK fires them at all and what height it carries.
+		const rec = (name: string) => (e: Event): void => {
+			const h = (e as { keyboardHeight?: number }).keyboardHeight;
+			if (typeof h === "number") this.kbLastHeight = name.includes("Hide") ? 0 : h;
+			this.kbLog.push(`${name}(${h ?? "?"})@${this.kbElapsed()}`);
+			this.kbLog = this.kbLog.slice(-12);
+			this.kbSnapshot(`<<${name}>>`);
+		};
+		for (const ev of ["keyboardWillShow", "keyboardDidShow", "keyboardWillHide", "keyboardDidHide"]) {
+			this.registerDomEvent(window as Window, ev as keyof WindowEventMap, rec(ev) as EventListener);
+		}
+
+		const btn = document.body.createEl("button", { text: "Copy KB" });
+		this.kbDebugEl = btn;
+		btn.style.position = "fixed";
+		// Top-right, offset down: clears the iPad status bar/clock (which hid the
+		// original top overlay) AND stays above the keyboard, so it's tappable while
+		// the keyboard is up.
+		btn.style.top = "56px";
+		btn.style.right = "6px";
+		btn.style.zIndex = "99999";
+		btn.style.font = "11px monospace";
+		btn.style.padding = "6px 10px";
+		btn.style.background = "#1a4";
+		btn.style.color = "#fff";
+		btn.style.border = "1px solid #fff";
+		btn.style.borderRadius = "6px";
+		btn.style.opacity = "0.85";
+		btn.addEventListener("click", () => this.copyToClipboard(this.kbReport(), "KB measurements copied"));
+
+		// ~30 snapshots @500ms ≈ 15s of history — plenty for raise→hold→dismiss→copy.
+		const tick = (): void => {
+			if (!this.kbDebugEl) return;
+			this.kbSnapshot();
+			btn.setText(`Copy KB (${this.kbHistory.length})`);
+			this.kbDebugTimer = window.setTimeout(tick, 500);
+		};
+		tick();
+	}
+
+	private kbElapsed(): string {
+		if (this.kbStartMs === 0) this.kbStartMs = Date.now();
+		return `+${((Date.now() - this.kbStartMs) / 1000).toFixed(1)}s`;
+	}
+
+	/** Append one geometry snapshot line to the rolling history (cap 30). */
+	private kbSnapshot(tag = ""): void {
+		const cc = this.contentEl;
+		const r = cc.getBoundingClientRect();
+		const comp = this.inputRowEl?.getBoundingClientRect();
+		const cs = cc.style;
+		const gcs = window.getComputedStyle(cc);
+		const parent = cc.parentElement;
+		const pr = parent?.getBoundingClientRect();
+		const leafBot = pr ? Math.round(pr.bottom) : undefined;
+		const n = (v: number | undefined): string => (v === undefined ? "—" : Math.round(v).toString());
+		// Real keyboard top = layout-viewport height − reported keyboard height
+		// (visualViewport is inert on iOS, so it can't tell us this).
+		const visBottom = window.innerHeight - this.kbLastHeight;
+		const behind = comp && comp.bottom > visBottom + 1 ? "BEHIND-KB" : "visible";
+		const focused = document.activeElement === this.inputEl ? "F" : "-";
+		// Which keyboard layout is active (iPhone uses occ-kb-open, iPad occ-kb-tablet).
+		const layout = cc.hasClass("occ-kb-open") ? "open" : cc.hasClass("occ-kb-tablet") ? "tablet" : "none";
+		const line =
+			`[${this.kbElapsed()}]${tag ? " " + tag : ""} foc=${focused} kbH=${this.kbLastHeight} ` +
+			`cc top=${n(r.top)} bot=${n(r.bottom)} h=${n(r.height)} styleH=${cs.height || "—"} usedH=${gcs.height} minH=${gcs.minHeight} maxH=${gcs.maxHeight} kbLayout=${layout} | ` +
+			`parent=${parent?.className || "?"} ph=${n(pr?.height)} leafBot=${leafBot ?? "—"} | ` +
+			`comp top=${n(comp?.top)} bot=${n(comp?.bottom)} visBot=${n(visBottom)} => ${behind}`;
+		this.kbHistory.push(line);
+		this.kbHistory = this.kbHistory.slice(-30);
+	}
+
+	/** Build the full clipboard report: static device facts + event log + history. */
+	private kbReport(): string {
+		const vv = window.visualViewport;
+		// Read env(safe-area-inset-*) via a probe (can't be read off the document directly).
+		const probe = document.body.createDiv();
+		probe.style.position = "fixed";
+		probe.style.bottom = "0";
+		probe.style.paddingBottom = "env(safe-area-inset-bottom, 0px)";
+		probe.style.paddingTop = "env(safe-area-inset-top, 0px)";
+		const safeBottom = window.getComputedStyle(probe).paddingBottom;
+		const safeTop = window.getComputedStyle(probe).paddingTop;
+		probe.remove();
+		return [
+			`=== OSK debug (${this.kbElapsed()}) ===`,
+			`win inner ${window.innerWidth}x${window.innerHeight} outer ${window.outerWidth}x${window.outerHeight}`,
+			`screen ${screen.width}x${screen.height} avail ${screen.availWidth}x${screen.availHeight}`,
+			`docEl.client h=${document.documentElement.clientHeight} vv.scale=${vv?.scale ?? "—"}`,
+			`safe-area top=${safeTop} bottom=${safeBottom} | body.clientH=${document.body.clientHeight}`,
+			`KB events: ${this.kbLog.join("  ") || "(NONE fired)"}`,
+			"",
+			"snapshots (oldest→newest):",
+			...this.kbHistory,
+		].join("\n");
 	}
 
 	private startNewSession(): void {
