@@ -25,6 +25,14 @@ export interface ClaudeChatSettings {
 	 * issues — see docs/MOBILE_KEYBOARD_DEBUG.md.
 	 */
 	debugKeyboardPanel: boolean;
+	/**
+	 * Show the connection-debug panel: a small on-screen log that records connection
+	 * lifecycle events (foreground/reconnect/attach/server errors), copies to the
+	 * clipboard on tap, and has a "Mark" button to insert section markers. Off by
+	 * default; enable to diagnose connection issues (e.g. "No such session" on
+	 * foregrounding). Reopen the chat view after changing.
+	 */
+	debugConnectionPanel: boolean;
 }
 
 export const DEFAULT_SETTINGS: ClaudeChatSettings = {
@@ -35,6 +43,7 @@ export const DEFAULT_SETTINGS: ClaudeChatSettings = {
 	autoReconnect: true,
 	reconnectDelayMs: 1500,
 	debugKeyboardPanel: false,
+	debugConnectionPanel: false,
 };
 
 /** Models offered in the new-session dropdown. */

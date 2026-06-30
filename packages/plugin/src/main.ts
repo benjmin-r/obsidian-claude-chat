@@ -42,6 +42,13 @@ export default class ClaudeChatPlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
+	/** Apply the connection-debug-panel setting to all open chat views (live toggle). */
+	refreshConnDebugPanels(): void {
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_CHAT)) {
+			if (leaf.view instanceof ChatView) leaf.view.syncConnDebugPanel();
+		}
+	}
+
 	/** Open (or reveal) the chat view in the right sidebar. */
 	async activateView(): Promise<void> {
 		const { workspace } = this.app;

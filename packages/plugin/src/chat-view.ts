@@ -97,6 +97,11 @@ export class ChatView extends ItemView {
 	private currentTitle: string | undefined;
 	private tabTitle = "Claude Chat";
 
+	// Connection-debug panel state (gated behind the debugConnectionPanel setting).
+	private dlog?: DebugLog;
+	private connDebugEl?: HTMLElement;
+	private connDebugCopyBtn?: HTMLButtonElement;
+
 	// On-screen-keyboard debug panel state (gated behind the debugKeyboardPanel setting).
 	private kbDebugEl?: HTMLElement;
 	private kbDebugTimer?: number;
@@ -142,6 +147,20 @@ export class ChatView extends ItemView {
 		// sidebar (which has its own bottom toolbar). Re-evaluate if the leaf is moved.
 		this.updateLeafLocationClass();
 		this.registerEvent(this.app.workspace.on("layout-change", () => this.updateLeafLocationClass()));
+		// Connection-debug logger (gated). Persists to localStorage so the log survives
+		// the view teardown/recreate that backgrounding causes. Created before the client
+		// so the very first connect() is captured.
+		if (this.plugin.settings.debugConnectionPanel) {
+			this.dlog = new DebugLog({
+				store: window.localStorage,
+				onChange: () => this.renderConnDebug(),
+			});
+			this.dlog.log("view", "onOpen");
+		} else {
+			// Panel off: drop any stale log left in localStorage from a previous debug run.
+			DebugLog.purge(window.localStorage);
+		}
+
 		this.client = new BridgeClient({
 			url: this.plugin.settings.serverUrl,
 			token: this.plugin.settings.token,
@@ -153,18 +172,23 @@ export class ChatView extends ItemView {
 				this.state = setConnection(this.state, s);
 				this.render();
 			},
+			// Always forward; a no-op until the panel is enabled (this.dlog set), so the
+			// setting can be toggled live without recreating the client.
+			onDebug: (tag, msg) => this.dlog?.log(tag, msg),
 		});
+		if (this.dlog) this.mountConnDebug();
 		this.client.connect();
 
 		// Mobile-WS recovery: when the app returns to the foreground the OS has often
 		// silently killed the socket (and suspended our reconnect timers). Force a
 		// reconnect on visibility/focus if we're no longer connected.
-		const recover = (): void => {
+		const recover = (src: string) => (): void => {
+			this.dlog?.log("view", `${src} hidden=${document.hidden} connected=${this.client?.isConnected() ?? false}`);
 			if (!document.hidden) this.client?.checkAlive();
 		};
-		this.registerDomEvent(document, "visibilitychange", recover);
-		this.registerDomEvent(window, "focus", recover);
-		this.registerDomEvent(window, "online", recover);
+		this.registerDomEvent(document, "visibilitychange", recover("visibilitychange"));
+		this.registerDomEvent(window, "focus", recover("focus"));
+		this.registerDomEvent(window, "online", recover("online"));
 
 		// Keep Escape inside the view. Obsidian's global Escape hotkey would otherwise
 		// switch tabs / focus the editor; capture it at the view root so it never reaches
@@ -212,6 +236,8 @@ export class ChatView extends ItemView {
 		if (this.sessionsRefreshTimer !== undefined) window.clearTimeout(this.sessionsRefreshTimer);
 		if (this.kbDebugTimer !== undefined) window.clearTimeout(this.kbDebugTimer);
 		this.kbDebugEl?.remove();
+		this.dlog?.log("view", "onClose (disconnect)");
+		this.connDebugEl?.remove();
 		this.resizeObserver?.disconnect();
 		this.client?.disconnect();
 	}
@@ -525,12 +551,87 @@ export class ChatView extends ItemView {
 		].join("\n");
 	}
 
+	/**
+	 * Connection-debug panel: a small fixed widget (top-right, like the KB panel) that
+	 * shows only the captured-line count and three buttons — Copy (full report to the
+	 * clipboard), Mark (numbered section marker), Clear (reset). The log itself is not
+	 * shown, to stay out of the way. Gated behind the debugConnectionPanel setting.
+	 */
+	private mountConnDebug(): void {
+		const panel = document.body.createDiv();
+		this.connDebugEl = panel;
+		Object.assign(panel.style, {
+			position: "fixed",
+			// Below the KB panel's slot (top:56px) so both can coexist without overlap.
+			top: "96px",
+			right: "6px",
+			zIndex: "99999",
+			display: "flex",
+			gap: "4px",
+			font: "11px monospace",
+			opacity: "0.85",
+		} as Partial<CSSStyleDeclaration>);
+
+		const mkBtn = (label: string): HTMLButtonElement => {
+			const b = panel.createEl("button", { text: label });
+			Object.assign(b.style, {
+				font: "11px monospace",
+				padding: "6px 8px",
+				background: "#1a4",
+				color: "#fff",
+				border: "1px solid #fff",
+				borderRadius: "6px",
+			} as Partial<CSSStyleDeclaration>);
+			return b;
+		};
+
+		const copy = mkBtn("Copy");
+		this.connDebugCopyBtn = copy;
+		copy.addEventListener("click", () => this.copyToClipboard(this.dlog?.report() ?? "", "Connection log copied"));
+		const mark = mkBtn("Mark");
+		mark.addEventListener("click", () => {
+			const n = this.dlog?.marker();
+			if (n !== undefined) new Notice(`Marker ${n} added`, 1500);
+		});
+		const clear = mkBtn("Clr");
+		clear.addEventListener("click", () => this.dlog?.clear());
+
+		this.renderConnDebug();
+	}
+
+	/** Refresh the captured-line count on the Copy button (via the DebugLog onChange hook). */
+	private renderConnDebug(): void {
+		if (!this.connDebugCopyBtn || !this.dlog) return;
+		this.connDebugCopyBtn.setText(`Copy (${this.dlog.count()})`);
+	}
+
+	/**
+	 * Reconcile the connection-debug panel with the current setting, so toggling it
+	 * applies to already-open views without an app restart. Called by the plugin when
+	 * the setting changes.
+	 */
+	syncConnDebugPanel(): void {
+		const enabled = this.plugin.settings.debugConnectionPanel;
+		if (enabled && !this.dlog) {
+			this.dlog = new DebugLog({ store: window.localStorage, onChange: () => this.renderConnDebug() });
+			this.dlog.log("view", "panel enabled");
+			this.mountConnDebug();
+		} else if (!enabled && this.dlog) {
+			this.connDebugEl?.remove();
+			this.connDebugEl = undefined;
+			this.connDebugCopyBtn = undefined;
+			this.dlog = undefined;
+			DebugLog.purge(window.localStorage);
+		}
+	}
+
 	private startNewSession(): void {
 		this.pickerOpen = false;
 		this.stickBottom = true;
 		this.applyDesiredMode = true;
 		this.currentTitle = undefined;
 		this.updateTabTitle();
+		this.dlog?.log("view", "startNewSession");
 		this.state = { ...initialState(this.selectedModel), connection: this.state.connection };
 		this.client.newSession(this.selectedModel);
 		this.render();
@@ -566,6 +667,7 @@ export class ChatView extends ItemView {
 	 * and the read-only banner's Reload button.
 	 */
 	private resumeSession(sessionId: string, title?: string): void {
+		this.dlog?.log("view", `resumeSession ${sessionId} (reload)`);
 		this.pickerOpen = false;
 		this.pendingText = undefined;
 		this.stickBottom = true; // switching in should always land at the bottom

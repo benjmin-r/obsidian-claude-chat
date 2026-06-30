@@ -29,6 +29,8 @@ export interface BridgeClientOptions {
 	createSocket: WsFactory;
 	onEvent: (event: BridgeEvent) => void;
 	onStateChange: (state: "disconnected" | "connecting" | "connected") => void;
+	/** optional sink for connection-lifecycle debug lines (the connection-debug panel). */
+	onDebug?: (tag: string, msg: string) => void;
 	/** injected so reconnect timing is testable; defaults provided by caller. */
 	schedule?: (fn: () => void, ms: number) => unknown;
 	cancel?: (handle: unknown) => void;
@@ -43,6 +45,8 @@ const HEARTBEAT_MS = 15_000;
 const STALE_MS = 35_000;
 /** After an active probe (checkAlive), wait this long for a reply before reconnecting. */
 const PROBE_MS = 5_000;
+/** Inbound frame types worth logging to the connection-debug panel (everything else is render noise). */
+const LIFECYCLE_FRAMES = new Set(["ready", "error", "attach_reset", "session_status", "sessions_list", "send_blocked"]);
 
 export class BridgeClient {
 	private ws: WsLike | undefined;
@@ -63,11 +67,19 @@ export class BridgeClient {
 		return this.opts.now ? this.opts.now() : Date.now();
 	}
 
+	private dbg(msg: string): void {
+		this.opts.onDebug?.("ws", msg);
+	}
+
 	connect(): void {
 		// Idempotent: a foreground can fire visibilitychange + focus + online together;
 		// don't spawn duplicate sockets if one is already connecting/open.
 		const rs = this.ws?.readyState;
-		if (rs === CONNECTING || rs === OPEN) return;
+		if (rs === CONNECTING || rs === OPEN) {
+			this.dbg(`connect() skipped (rs=${rs})`);
+			return;
+		}
+		this.dbg(`connect() rs=${rs ?? "none"} attach=${this.attachTarget ?? "-"}`);
 		this.intentionalClose = false;
 		this.cancelReconnect();
 		this.stopHeartbeat();
@@ -114,6 +126,7 @@ export class BridgeClient {
 	 */
 	checkAlive(): void {
 		const rs = this.ws?.readyState;
+		this.dbg(`checkAlive rs=${rs ?? "none"} probePending=${this.probePending}`);
 		if (rs === CONNECTING) return; // already (re)connecting — let it finish
 		if (rs !== OPEN) {
 			this.connect(); // dead / never opened → reconnect
@@ -126,7 +139,10 @@ export class BridgeClient {
 		const schedule = this.opts.schedule ?? ((fn, ms) => setTimeout(fn, ms));
 		schedule(() => {
 			this.probePending = false;
-			if (this.isConnected() && this.lastSeenAt === before) this.forceReconnect();
+			if (this.isConnected() && this.lastSeenAt === before) {
+				this.dbg("probe: no reply → forceReconnect");
+				this.forceReconnect();
+			}
 		}, PROBE_MS);
 	}
 
@@ -190,6 +206,7 @@ export class BridgeClient {
 	/** @returns true if the frame was sent (socket open), false otherwise. */
 	send(msg: ClientMessage): boolean {
 		if (!this.ws || this.ws.readyState !== OPEN) {
+			this.dbg(`send blocked (not open): ${msg.type}`);
 			this.opts.onEvent({ type: "error", message: "Not connected to the Claude server." });
 			return false;
 		}
@@ -204,6 +221,7 @@ export class BridgeClient {
 		this.lastSeenAt = this.now();
 		const hello: ClientMessage = { type: "hello", token: this.opts.token };
 		if (this.attachTarget) hello.attach = this.attachTarget;
+		this.dbg(`open → hello (attach=${this.attachTarget ?? "-"})`);
 		this.ws?.send(JSON.stringify(hello));
 		this.opts.onStateChange("connected");
 		this.startHeartbeat();
@@ -222,6 +240,19 @@ export class BridgeClient {
 		if (typeof type !== "string") return;
 		this.lastSeenAt = this.now(); // any inbound frame proves the socket is alive
 		if (type === "pong") return; // liveness only — not a UI event
+		// Log connection-relevant frames only (skip high-frequency render/delta traffic).
+		if (this.opts.onDebug && LIFECYCLE_FRAMES.has(type)) {
+			const p = parsed as Record<string, unknown>;
+			const detail =
+				type === "error"
+					? `: ${String(p.message ?? "")}`
+					: type === "session_status"
+						? ` ${String(p.sessionId ?? "")} status=${String(p.status ?? "")}`
+						: type === "sessions_list"
+							? ` (${Array.isArray(p.sessions) ? p.sessions.length : "?"})`
+							: ` ${String(p.sessionId ?? "")}`;
+			this.dbg(`<- ${type}${detail}`.trimEnd());
+		}
 		this.opts.onEvent(parsed as BridgeEvent);
 	}
 
@@ -233,6 +264,7 @@ export class BridgeClient {
 	private onClose(): void {
 		this.ws = undefined;
 		this.stopHeartbeat();
+		this.dbg(`close (intentional=${this.intentionalClose} autoReconnect=${this.opts.autoReconnect})`);
 		this.opts.onStateChange("disconnected");
 		if (this.intentionalClose || !this.opts.autoReconnect) return;
 		this.scheduleReconnect();
@@ -248,7 +280,9 @@ export class BridgeClient {
 
 	private heartbeat(): void {
 		if (!this.isConnected()) return; // onClose/reconnect owns the disconnected case
-		if (this.now() - this.lastSeenAt > STALE_MS) {
+		const age = this.now() - this.lastSeenAt;
+		if (age > STALE_MS) {
+			this.dbg(`heartbeat: stale (${age}ms) → forceReconnect`);
 			this.forceReconnect(); // dead-but-open socket
 			return;
 		}
@@ -280,6 +314,7 @@ export class BridgeClient {
 		this.attempts += 1;
 		// capped exponential backoff
 		const delay = Math.min(this.opts.reconnectDelayMs * 2 ** (this.attempts - 1), 30_000);
+		this.dbg(`scheduleReconnect #${this.attempts} in ${delay}ms`);
 		this.reconnectHandle = schedule(() => this.connect(), delay);
 	}
 

@@ -110,5 +110,18 @@ export class ClaudeChatSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				})
 			);
+
+		new Setting(containerEl)
+			.setName("Connection debug panel")
+			.setDesc(
+				"Show a small on-screen widget that records connection events (foreground/reconnect/attach/server errors). Copy sends the log to the clipboard; Mark inserts a section marker. For diagnosing connection issues like 'No such session' on foregrounding."
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.debugConnectionPanel).onChange(async (value) => {
+					this.plugin.settings.debugConnectionPanel = value;
+					await this.plugin.saveSettings();
+					this.plugin.refreshConnDebugPanels();
+				})
+			);
 	}
 }
