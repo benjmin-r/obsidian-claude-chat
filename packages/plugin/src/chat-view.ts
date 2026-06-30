@@ -2,6 +2,7 @@ import { App, ItemView, MarkdownRenderer, Menu, Modal, Notice, Platform, setIcon
 import type { BridgeEvent, PermissionMode } from "@occ/protocol";
 import type ClaudeChatPlugin from "./main";
 import { BridgeClient, type WsLike } from "./bridge-client";
+import { DebugLog } from "./debug-log";
 import { FileSuggest } from "./file-suggest";
 import { MODEL_OPTIONS } from "./settings-types";
 import {
@@ -63,6 +64,7 @@ export class ChatView extends ItemView {
 	private costEl!: HTMLElement;
 	private modelLabelEl!: HTMLElement;
 	private modeBtn!: HTMLButtonElement;
+	private reloadBtn!: HTMLButtonElement;
 	private selectedModel: string;
 	/** desired permission mode for new sessions; applied once a session starts. */
 	private desiredMode: PermissionMode;
@@ -226,6 +228,15 @@ export class ChatView extends ItemView {
 		setIcon(newBtn, "plus");
 		newBtn.setAttr("aria-label", "New session");
 		newBtn.addEventListener("click", () => this.startNewSession());
+
+		// Reload the current session from disk — same effect as re-picking it in the
+		// session picker (drops the cached actor, replays fresh history, re-checks CLI activity).
+		this.reloadBtn = toolbar.createEl("button", { cls: "occ-tool-btn" });
+		setIcon(this.reloadBtn, "rotate-ccw");
+		this.reloadBtn.setAttr("aria-label", "Reload current session");
+		this.reloadBtn.addEventListener("click", () => {
+			if (this.state.sessionId) this.resumeSession(this.state.sessionId, this.currentTitle);
+		});
 
 		const pickerBtn = toolbar.createEl("button", { cls: "occ-tool-btn" });
 		setIcon(pickerBtn, "list");
@@ -864,6 +875,9 @@ export class ChatView extends ItemView {
 		setIcon(this.activityIconEl, icon);
 		this.activityIconEl.className = `occ-status-icon occ-act-${cls}`;
 		this.activityIconEl.setAttr("aria-label", label);
+
+		// Nothing to reload until a session is attached.
+		this.reloadBtn.disabled = !this.state.sessionId;
 
 		// The Send button doubles as Stop while a turn is running; locked when read-only.
 		this.sendBtn.setText(working ? "Stop" : "Send");
