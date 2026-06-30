@@ -65,7 +65,7 @@ export class ChatView extends ItemView {
 	private modeBtn!: HTMLButtonElement;
 	private selectedModel: string;
 	/** desired permission mode for new sessions; applied once a session starts. */
-	private desiredMode: PermissionMode = "default";
+	private desiredMode: PermissionMode;
 	private applyDesiredMode = false;
 	private messagesEl!: HTMLElement;
 	private messagesInnerEl!: HTMLElement;
@@ -109,6 +109,7 @@ export class ChatView extends ItemView {
 	) {
 		super(leaf);
 		this.selectedModel = plugin.settings.defaultModel;
+		this.desiredMode = plugin.settings.defaultPermissionMode;
 		this.state = initialState(plugin.settings.defaultModel);
 	}
 

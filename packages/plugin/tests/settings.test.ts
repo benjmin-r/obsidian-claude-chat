@@ -23,7 +23,7 @@ describe("ClaudeChatSettingTab", () => {
 		const inputs = tab.containerEl.querySelectorAll("input");
 		const selects = tab.containerEl.querySelectorAll("select");
 		expect(inputs.length).toBeGreaterThanOrEqual(3);
-		expect(selects.length).toBe(1); // model dropdown
+		expect(selects.length).toBe(2); // model + default-mode dropdowns
 		expect(tab.containerEl.querySelector('input[type="password"]')).not.toBeNull();
 	});
 

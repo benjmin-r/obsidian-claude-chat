@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type ClaudeChatPlugin from "./main";
-import { MODEL_OPTIONS } from "./settings-types";
+import { MODEL_OPTIONS, PERMISSION_MODE_OPTIONS } from "./settings-types";
+import type { PermissionMode } from "@occ/protocol";
 
 /**
  * Settings tab. Every field is rendered on all platforms (no desktop-only
@@ -55,6 +56,19 @@ export class ClaudeChatSettingTab extends PluginSettingTab {
 					this.plugin.settings.defaultModel = value;
 					await this.plugin.saveSettings();
 				});
+			});
+
+		new Setting(containerEl)
+			.setName("Default mode")
+			.setDesc("Permission mode applied to new sessions. Change it per-chat from the toolbar mode picker.")
+			.addDropdown((dropdown) => {
+				for (const [value, label] of Object.entries(PERMISSION_MODE_OPTIONS)) dropdown.addOption(value, label);
+				dropdown
+					.setValue(this.plugin.settings.defaultPermissionMode)
+					.onChange(async (value) => {
+						this.plugin.settings.defaultPermissionMode = value as PermissionMode;
+						await this.plugin.saveSettings();
+					});
 			});
 
 		new Setting(containerEl)
