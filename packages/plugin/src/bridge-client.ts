@@ -104,10 +104,23 @@ export class BridgeClient {
 			return;
 		}
 		this.ws = ws;
-		ws.onopen = () => this.onOpen();
-		ws.onclose = () => this.onClose();
-		ws.onerror = () => this.onError();
-		ws.onmessage = (ev) => this.onMessage(ev.data);
+		// Guard every handler against a DISCARDED socket. forceReconnect() closes the old
+		// socket and immediately opens a new one; the old socket's close/open events fire
+		// asynchronously (browsers defer them), so without this check a late onclose would
+		// null `this.ws` — the new socket — and schedule a second reconnect, producing a
+		// duplicate connection (two hellos). Only the current socket may drive state.
+		ws.onopen = () => {
+			if (this.ws === ws) this.onOpen();
+		};
+		ws.onclose = () => {
+			if (this.ws === ws) this.onClose();
+		};
+		ws.onerror = () => {
+			if (this.ws === ws) this.onError();
+		};
+		ws.onmessage = (ev) => {
+			if (this.ws === ws) this.onMessage(ev.data);
+		};
 	}
 
 	disconnect(): void {

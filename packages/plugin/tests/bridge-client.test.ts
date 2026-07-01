@@ -228,6 +228,34 @@ describe("BridgeClient", () => {
 		expect(FakeWs.instances).toHaveLength(1);
 	});
 
+	it("ignores late events from a socket that was already replaced (no duplicate connect)", () => {
+		let now = 0;
+		const h = makeClient({ now: () => now });
+		h.client.connect();
+		const a = h.last();
+		a.fireOpen();
+
+		// Stale heartbeat: forceReconnect closes A and opens B.
+		now = 60000;
+		h.scheduled.filter((s) => s.ms === 15000).at(-1)!.fn();
+		const b = h.last();
+		expect(b).not.toBe(a);
+		expect(h.client.isConnected()).toBe(false); // B not open yet
+
+		b.fireOpen();
+		expect(h.client.isConnected()).toBe(true);
+		const reconCount = recon(h).length;
+
+		// A's close/open arrive LATE (browsers defer them) — they must be ignored now
+		// that B is the current socket, or they'd null this.ws and spawn a reconnect.
+		a.onclose?.();
+		a.fireOpen();
+		expect(h.client.isConnected()).toBe(true); // still attached to B
+		expect(h.last()).toBe(b); // no new socket spawned
+		expect(FakeWs.instances).toHaveLength(2);
+		expect(recon(h).length).toBe(reconCount); // no extra reconnect scheduled
+	});
+
 	it("reports connection status", () => {
 		const h = makeClient();
 		expect(h.client.isConnected()).toBe(false);
