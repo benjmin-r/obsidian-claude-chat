@@ -161,6 +161,14 @@ export class SessionActor {
 
 	/** Cancel the in-flight turn. */
 	async interrupt(): Promise<void> {
+		if (this.pendingPermissions.size > 0) {
+			// Diagnostic: interrupting while a permission is outstanding abandons it; the
+			// SDK then records the tool as rejected with NO user decision. This is the
+			// suspected source of "rejected without interaction" (see reload/drop path).
+			console.warn(
+				`[occ][perm] interrupt() with ${this.pendingPermissions.size} pending permission(s) session=${this.id} ids=[${[...this.pendingPermissions.keys()].join(",")}]`
+			);
+		}
 		await this.handle?.interrupt();
 	}
 
@@ -202,6 +210,7 @@ export class SessionActor {
 		if (!resolve) return;
 		this.pendingPermissions.delete(toolUseId);
 		if (this.pendingRequest?.toolUseId === toolUseId) this.pendingRequest = undefined;
+		console.log(`[occ][perm] ${allow ? "ALLOW" : "DENY"} (user) session=${this.id} id=${toolUseId}`);
 		if (allow) {
 			resolve({ behavior: "allow", updatedInput: this.lastInputs.get(toolUseId) ?? {} });
 		} else {
@@ -296,6 +305,19 @@ export class SessionActor {
 		}
 		const toolUseId = opts.toolUseID ?? `perm-${(this.permissionCounter += 1)}`;
 		this.lastInputs.set(toolUseId, input);
+		console.log(`[occ][perm] REQUEST session=${this.id} tool=${toolName} id=${toolUseId}`);
+		// Diagnostic: if the SDK aborts this tool (interrupt / query teardown) while we're
+		// still waiting, the permission resolves with NO user decision. Log it so we can
+		// confirm the "rejected without interaction" reports against the reload/drop path.
+		opts.signal?.addEventListener(
+			"abort",
+			() => {
+				if (this.pendingPermissions.has(toolUseId)) {
+					console.warn(`[occ][perm] ABORTED (signal, no user decision) session=${this.id} tool=${toolName} id=${toolUseId}`);
+				}
+			},
+			{ once: true }
+		);
 		return new Promise<PermissionResult>((resolve) => {
 			this.pendingPermissions.set(toolUseId, resolve);
 			this.pendingRequest = {
