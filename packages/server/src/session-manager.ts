@@ -157,6 +157,31 @@ export class SessionManager {
 		return actor;
 	}
 
+	/**
+	 * Attach to a session for a (re)connecting client: return the live actor if it is
+	 * still in memory, else resume it from the CLI store — but ONLY if it actually
+	 * exists there. Returns undefined for a genuinely unknown id.
+	 *
+	 * This is the reconnect path. The idle reaper drops in-memory actors after a few
+	 * minutes with no clients, so a client foregrounding after a long background finds
+	 * its session gone from memory though still persisted on disk; without this it
+	 * would get a spurious "No such session". The existence check is required because
+	 * resumeWithHistory swallows load errors and would otherwise fabricate a phantom
+	 * actor for a bogus id.
+	 */
+	async attachOrResume(sessionId: string): Promise<SessionActor | undefined> {
+		const existing = this.index.get(sessionId);
+		if (existing) return existing;
+		let stored: Awaited<ReturnType<ListStored>> = [];
+		try {
+			stored = await this.deps.listStored(this.config.cwd);
+		} catch {
+			stored = [];
+		}
+		if (!stored.some((s) => s.sessionId === sessionId)) return undefined;
+		return this.resumeWithHistory(sessionId);
+	}
+
 	/** Set a session's display title in the store. */
 	async renameSession(sessionId: string, title: string): Promise<void> {
 		await this.deps.renameStored(this.config.cwd, sessionId, title);

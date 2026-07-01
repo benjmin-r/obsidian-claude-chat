@@ -342,7 +342,7 @@ describe("Connection session flow", () => {
 		expect(fake.interrupted()).toBe(true);
 	});
 
-	it("attaches to an existing session named in hello", () => {
+	it("attaches to an existing session named in hello", async () => {
 		const { mkConn } = setup();
 		const a = mkConn();
 		a.conn.handle({ type: "hello", token: "secret" });
@@ -351,13 +351,41 @@ describe("Connection session flow", () => {
 
 		const b = mkConn();
 		b.conn.handle({ type: "hello", token: "secret", attach: sessionId });
+		await flush(); // attach is async now (may resume from disk)
 		expect(b.sent.some((e) => e.type === "session_status" && e.sessionId === sessionId)).toBe(true);
 	});
 
-	it("errors when hello attaches to a missing session", () => {
-		const { mkConn } = setup();
+	it("resumes from disk when hello attaches to a reaped (on-disk) session", async () => {
+		const fake = makeFakeQuery();
+		let n = 0;
+		const manager = new SessionManager(
+			{
+				runQuery: fake.runQuery,
+				now: () => 1,
+				newHandleId: () => `h${(n += 1)}`,
+				listStored: async () => [{ sessionId: "old-1", title: "Old chat", updatedAt: 5 }],
+				loadHistory: async () => [{ type: "user", message: { content: "earlier question" } }],
+				renameStored: async () => undefined,
+				deleteStored: async () => undefined,
+			},
+			{ cwd: "/v", defaultModel: "m" }
+		);
+		const writers = createWriterRegistry();
+		const sent: BridgeEvent[] = [];
+		const conn = new Connection({ manager, token: "secret", writers, send: (e) => sent.push(e) });
+		conn.handle({ type: "hello", token: "secret", attach: "old-1" });
+		await flush();
+		await flush();
+		expect(sent.some((e) => e.type === "session_status" && e.sessionId === "old-1")).toBe(true);
+		expect(sent.some((e) => e.type === "user_echo" && e.text === "earlier question")).toBe(true);
+		expect(sent.some((e) => e.type === "error")).toBe(false);
+	});
+
+	it("errors when hello attaches to a session that is neither live nor on disk", async () => {
+		const { mkConn } = setup(); // default listStored returns []
 		const { conn, sent } = mkConn();
 		conn.handle({ type: "hello", token: "secret", attach: "nope" });
+		await flush(); // attach is async now
 		expect(sent.some((e) => e.type === "error" && e.message.includes("nope"))).toBe(true);
 	});
 });

@@ -63,6 +63,36 @@ describe("SessionManager", () => {
 		expect(manager.get("old-session")).toBe(reconstructed);
 	});
 
+	describe("attachOrResume", () => {
+		it("returns the live in-memory actor without consulting the store", async () => {
+			let listed = 0;
+			const { manager } = makeManager({
+				listStored: async () => {
+					listed += 1;
+					return [];
+				},
+			});
+			const actor = manager.resume("sess-1");
+			expect(await manager.attachOrResume("sess-1")).toBe(actor);
+			expect(listed).toBe(0);
+		});
+
+		it("resumes and registers a session that exists only on disk", async () => {
+			const { manager } = makeManager({
+				listStored: async () => [{ sessionId: "old-1", title: "Old", updatedAt: 5 }],
+			});
+			const actor = await manager.attachOrResume("old-1");
+			expect(actor?.id).toBe("old-1");
+			expect(manager.get("old-1")).toBe(actor);
+		});
+
+		it("returns undefined for an id neither in memory nor on disk (no phantom actor)", async () => {
+			const { manager } = makeManager({ listStored: async () => [] });
+			expect(await manager.attachOrResume("ghost")).toBeUndefined();
+			expect(manager.get("ghost")).toBeUndefined();
+		});
+	});
+
 	it("resumeWithHistory checks CLI activity immediately so attach reflects read-only at once", async () => {
 		const { manager } = makeManager({
 			detectExternalActivity: () => ({ severity: "busy", pid: 5, entrypoint: "cli" }),

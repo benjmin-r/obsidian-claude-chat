@@ -133,11 +133,9 @@ export class Connection {
 		}
 		this.authed = true;
 		this.deps.send({ type: "ready", protocolVersion: PROTOCOL_VERSION });
-		if (msg.attach) {
-			const actor = this.deps.manager.get(msg.attach);
-			if (actor) this.attach(actor);
-			else this.deps.send({ type: "error", message: `No such session: ${msg.attach}` });
-		}
+		// Fire-and-forget: `ready` is already sent above; the attach may need to resume
+		// the session from disk (reconnect after the in-memory actor was reaped).
+		if (msg.attach) void this.attachByIdOrError(msg.attach);
 		return {};
 	}
 
@@ -175,6 +173,18 @@ export class Connection {
 		const actor = this.deps.manager.create(model);
 		this.deps.writers.claim(actor, this); // the creator is the writer
 		this.attach(actor); // attach AFTER claiming so the first status reports isWriter:true
+	}
+
+	/** Attach to a session named in `hello`, resuming it from disk if it was reaped. */
+	private async attachByIdOrError(sessionId: string): Promise<void> {
+		try {
+			const actor = await this.deps.manager.attachOrResume(sessionId);
+			if (actor) this.attach(actor);
+			else this.deps.send({ type: "error", sessionId, message: `Session not found (${sessionId}) — it may have been deleted.` });
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			this.deps.send({ type: "error", sessionId, message: `Failed to attach: ${message}` });
+		}
 	}
 
 	private onResume(sessionId: string, reload: boolean): void {
