@@ -165,6 +165,30 @@ describe("SessionManager", () => {
 		expect(manager.get("sess-1")).toBe(reloaded);
 	});
 
+	it("reloadSession does NOT drop an actor awaiting a permission decision", async () => {
+		let loads = 0;
+		const { fake, manager } = makeManager({
+			loadHistory: async () => {
+				loads += 1;
+				return [];
+			},
+		});
+		const actor = await manager.resumeWithHistory("sess-1");
+		expect(loads).toBe(1);
+		actor.enqueue("delete the file"); // starts the query
+		// Raise a destructive-tool permission request; the promise stays pending.
+		const decision = fake.options()?.canUseTool?.("Bash", { command: "rm -rf build" }, { toolUseID: "t1", signal: new AbortController().signal });
+		expect(actor.status).toBe("awaiting_permission");
+		expect(actor.hasPendingPermissions).toBe(true);
+
+		const reloaded = await manager.reloadSession("sess-1");
+
+		expect(reloaded).toBe(actor); // same live actor — not torn down
+		expect(loads).toBe(1); // no fresh disk read
+		expect(fake.interrupted()).toBe(false); // query left running, pending promise intact
+		expect(decision).toBeInstanceOf(Promise); // silence unused-var lint
+	});
+
 	it("listSummaries merges active + stored, dedupes, sorts newest first", async () => {
 		const { manager } = makeManager({
 			listStored: async () => [

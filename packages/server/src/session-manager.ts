@@ -116,6 +116,12 @@ export class SessionManager {
 	 */
 	async reloadSession(sessionId: string): Promise<SessionActor> {
 		const existing = this.index.get(sessionId);
+		// Never tear down an actor that is awaiting a permission decision. dropActor
+		// interrupts the SDK query, which abandons the pending canUseTool promise and
+		// makes the SDK record the tool as rejected with no user Allow/Deny (the
+		// "permission rejected on reload" bug). The live actor is already current, so
+		// just return it — the re-attach re-surfaces the pending request via subscribe().
+		if (existing?.hasPendingPermissions) return existing;
 		if (existing) this.dropActor(existing);
 		return this.resumeWithHistory(sessionId);
 	}

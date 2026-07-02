@@ -106,6 +106,16 @@ export class SessionActor {
 		return this._status;
 	}
 
+	/**
+	 * True while at least one destructive-tool permission is awaiting a user decision.
+	 * The actor must NOT be interrupted/dropped in this state: interrupting the query
+	 * abandons the pending `canUseTool` promise, and the SDK then records the tool as
+	 * rejected with no user Allow/Deny (the "rejected without interaction" bug).
+	 */
+	get hasPendingPermissions(): boolean {
+		return this.pendingPermissions.size > 0;
+	}
+
 	get externalActivity(): ExternalActivity {
 		return this._external;
 	}
