@@ -230,6 +230,25 @@ export class SessionActor {
 	}
 
 	/**
+	 * Resolve EVERY outstanding permission as an explicit deny. Used when reaping a
+	 * long-abandoned request (client gone, unanswered): unlike an interrupt/drop —
+	 * which abandons the `canUseTool` promise and makes the SDK phantom-reject with
+	 * no decision — this hands the SDK a concrete "deny" so the turn resumes cleanly
+	 * and the transcript records a real decision. The turn then completes and the
+	 * actor falls idle, so the normal idle sweep frees the subprocess.
+	 */
+	autoDenyPending(reason: string): void {
+		if (this.pendingPermissions.size === 0) return;
+		for (const [toolUseId, resolve] of this.pendingPermissions) {
+			console.warn(`[occ][perm] DENY (auto: expired) session=${this.id} id=${toolUseId}`);
+			resolve({ behavior: "deny", message: reason });
+		}
+		this.pendingPermissions.clear();
+		this.pendingRequest = undefined;
+		this.setStatus("working");
+	}
+
+	/**
 	 * Attach a client. Replays the buffered transcript, then the live tail.
 	 * Sends a fresh status and re-surfaces any still-pending permission request.
 	 * @returns an unsubscribe function.

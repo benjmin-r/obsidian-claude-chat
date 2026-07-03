@@ -149,6 +149,59 @@ describe("SessionManager", () => {
 		expect(manager.get(a.handleId)).toBe(a);
 	});
 
+	/** Start an actor and raise a real destructive-tool permission request on it. */
+	function raisePermission(fake: ReturnType<typeof makeManager>["fake"], actor: ReturnType<SessionManager["create"]>) {
+		actor.enqueue("delete the file"); // starts the query
+		const decision = fake.options()?.canUseTool?.(
+			"Bash",
+			{ command: "rm -rf build" },
+			{ toolUseID: "t1", signal: new AbortController().signal }
+		);
+		return decision as Promise<{ behavior: string; message?: string }>;
+	}
+
+	it("reapIdle auto-denies a stale, detached awaiting-permission actor (no phantom-reject)", async () => {
+		let now = 0;
+		const { fake, manager } = makeManager({ now: () => now });
+		const actor = manager.create();
+		const decision = raisePermission(fake, actor);
+		expect(actor.status).toBe("awaiting_permission");
+
+		now = 61 * 60_000; // past the 1 h permission TTL
+		manager.reapIdle(5 * 60_000, 60 * 60_000);
+
+		await expect(decision).resolves.toMatchObject({ behavior: "deny" }); // a real decision, not abandoned
+		expect(actor.hasPendingPermissions).toBe(false);
+		expect(actor.status).not.toBe("awaiting_permission"); // turn resumed; idle sweep frees it later
+	});
+
+	it("reapIdle keeps an awaiting-permission actor while a client is attached", () => {
+		let now = 0;
+		const { fake, manager } = makeManager({ now: () => now });
+		const actor = manager.create();
+		raisePermission(fake, actor);
+		actor.subscribe(() => undefined); // a client that may still answer
+
+		now = 61 * 60_000;
+		manager.reapIdle(5 * 60_000, 60 * 60_000);
+
+		expect(actor.hasPendingPermissions).toBe(true); // left alone
+		expect(actor.status).toBe("awaiting_permission");
+	});
+
+	it("reapIdle does not auto-deny an awaiting-permission actor before the permission TTL", () => {
+		let now = 0;
+		const { fake, manager } = makeManager({ now: () => now });
+		const actor = manager.create();
+		raisePermission(fake, actor);
+
+		now = 10 * 60_000; // past the 5 min idle TTL, before the 1 h permission TTL
+		manager.reapIdle(5 * 60_000, 60 * 60_000);
+
+		expect(actor.hasPendingPermissions).toBe(true);
+		expect(actor.status).toBe("awaiting_permission");
+	});
+
 	it("reloadSession drops the cached actor and reconstructs it fresh from disk", async () => {
 		let loads = 0;
 		const { manager } = makeManager({

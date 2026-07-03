@@ -49,12 +49,24 @@ export class SessionManager {
 		this.detect = deps.detectExternalActivity ?? (() => ({ severity: "none" }));
 	}
 
-	/** Release actors idle longer than maxIdleMs with no attached clients. */
-	reapIdle(maxIdleMs: number): void {
+	/**
+	 * Sweep detached actors: release idle ones older than `maxIdleMs`, and auto-deny
+	 * permission prompts abandoned longer than `permissionMaxIdleMs` (defaults to
+	 * `maxIdleMs`). An awaiting-permission actor can't be dropped directly — that
+	 * would abandon its `canUseTool` promise and make the SDK phantom-reject — so we
+	 * resolve the prompt as an explicit deny; the turn then falls idle and a later
+	 * sweep frees it via the idle path. Attached actors (a client may still answer)
+	 * are always left alone.
+	 */
+	reapIdle(maxIdleMs: number, permissionMaxIdleMs = maxIdleMs): void {
 		const now = this.deps.now();
 		for (const actor of [...this.actors]) {
-			if (actor.status === "idle" && actor.clientListenerCount === 0 && now - actor.updatedAt > maxIdleMs) {
+			if (actor.clientListenerCount !== 0) continue;
+			const age = now - actor.updatedAt;
+			if (actor.status === "idle" && age > maxIdleMs) {
 				this.dropActor(actor);
+			} else if (actor.status === "awaiting_permission" && age > permissionMaxIdleMs) {
+				actor.autoDenyPending("Auto-denied: permission request expired without a response.");
 			}
 		}
 	}
