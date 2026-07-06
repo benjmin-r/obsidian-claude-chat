@@ -138,13 +138,16 @@ export class SessionManager {
 		return this.resumeWithHistory(sessionId);
 	}
 
-	/** Interrupt (best-effort) and remove an actor plus all its id aliases. */
+	/** Terminate an actor (freeing its subprocess) and remove all its id aliases. */
 	private dropActor(actor: SessionActor): void {
-		// Stop the aliasing listener FIRST, so the interrupt's status broadcast can't
+		// Stop the aliasing listener FIRST, so a teardown status broadcast can't
 		// re-insert the actor we're about to remove.
 		this.aliasUnsub.get(actor)?.();
 		this.aliasUnsub.delete(actor);
-		void actor.interrupt().catch(() => undefined);
+		// dispose(), NOT interrupt(): interrupt only cancels the turn and leaves the SDK
+		// subprocess resident, so dropped/reaped sessions would orphan a live process and
+		// accumulate until the host runs out of RAM. dispose tears the subprocess down.
+		void actor.dispose().catch(() => undefined);
 		this.actors.delete(actor);
 		for (const [id, a] of [...this.index]) {
 			if (a === actor) this.index.delete(id);

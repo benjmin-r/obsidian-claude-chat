@@ -170,6 +170,33 @@ describe("SessionActor", () => {
 		expect(fake.interrupted()).toBe(true);
 	});
 
+	it("dispose tears down the query (frees the subprocess) and is idempotent", async () => {
+		const { fake, actor } = makeActor();
+		actor.enqueue("hi");
+		await actor.dispose();
+		expect(fake.disposed()).toBe(true);
+		await actor.dispose(); // idempotent — no throw, no second teardown
+	});
+
+	it("dispose closes the input queue so the streaming stdin EOFs", async () => {
+		const { fake, actor } = makeActor();
+		actor.enqueue("hi");
+		const input = fake.prompt()!;
+		await actor.dispose();
+		// After the one buffered turn drains, the prompt generator must be done (EOF),
+		// else the SDK subprocess would keep waiting on stdin forever.
+		const it = input[Symbol.asyncIterator]();
+		await it.next(); // drains the buffered "hi"
+		await expect(it.next()).resolves.toEqual({ value: undefined, done: true });
+	});
+
+	it("dispose stops the query from restarting on a later enqueue", async () => {
+		const { fake, actor } = makeActor();
+		await actor.dispose();
+		actor.enqueue("hi"); // must NOT start a new query after disposal
+		expect(fake.options()).toBeUndefined();
+	});
+
 	it("broadcasts external activity on change, ignores no-ops, and re-emits on attach", () => {
 		const { actor } = makeActor();
 		const events = collect(actor);
@@ -229,6 +256,7 @@ describe("SessionActor", () => {
 						/* idle */
 					},
 					interrupt: async () => undefined,
+					dispose: async () => undefined,
 					setPermissionMode: async () => {
 						throw new Error("not allowed");
 					},
@@ -254,6 +282,7 @@ describe("SessionActor", () => {
 						throw new Error("boom");
 					},
 					interrupt: async () => undefined,
+					dispose: async () => undefined,
 					setPermissionMode: async () => undefined,
 				}),
 				now: () => 1,

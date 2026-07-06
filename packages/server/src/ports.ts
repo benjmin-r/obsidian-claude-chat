@@ -45,8 +45,15 @@ export interface UserInputMessage {
 
 /** The object returned by `query()`: an async iterable of SDK messages + controls. */
 export interface QueryHandle extends AsyncIterable<SdkMessage> {
+	/** Cancel the in-flight TURN only; the session (and its subprocess) stays alive. */
 	interrupt(): Promise<void>;
 	setPermissionMode(mode: PermissionMode): Promise<void>;
+	/**
+	 * Terminate the session for good: close the async generator so the SDK tears
+	 * down the CLI subprocess. Unlike {@link interrupt}, this frees the OS process —
+	 * without it, dropped/reaped sessions orphan a resident subprocess.
+	 */
+	dispose(): Promise<void>;
 }
 
 /** Injected SDK entrypoint. Real = `sdk-adapter.runQuery`; test = a scripted generator. */

@@ -69,6 +69,7 @@ export class SessionActor {
 
 	private handle: QueryHandle | undefined;
 	private started = false;
+	private disposed = false;
 	private _status: SessionStatus = "idle";
 	private _permissionMode: PermissionMode = "default";
 	private _external: ExternalActivity = { severity: "none" };
@@ -142,9 +143,9 @@ export class SessionActor {
 		return this.opts.cwd;
 	}
 
-	/** Begin consuming the query. Idempotent. */
+	/** Begin consuming the query. Idempotent; no-op once disposed. */
 	ensureStarted(): void {
-		if (this.started) return;
+		if (this.started || this.disposed) return;
 		this.started = true;
 		this.handle = this.deps.runQuery(this.input, {
 			cwd: this.opts.cwd,
@@ -169,7 +170,7 @@ export class SessionActor {
 		this.setStatus("working");
 	}
 
-	/** Cancel the in-flight turn. */
+	/** Cancel the in-flight turn (the session and its subprocess stay alive). */
 	async interrupt(): Promise<void> {
 		if (this.pendingPermissions.size > 0) {
 			// Diagnostic: interrupting while a permission is outstanding abandons it; the
@@ -180,6 +181,28 @@ export class SessionActor {
 			);
 		}
 		await this.handle?.interrupt();
+	}
+
+	/**
+	 * Terminate the session for good and free its OS subprocess. Idempotent.
+	 *
+	 * `interrupt()` only cancels the current turn — the SDK query stays alive in
+	 * streaming-input mode, waiting on stdin, so the CLI subprocess stays resident.
+	 * Dropping the actor without this orphans that subprocess; repeated reloads/reaps
+	 * accumulate them until the host runs out of RAM. So we close the input queue
+	 * (EOF the streaming stdin) AND close the async generator (`handle.dispose()` →
+	 * the SDK tears down the child).
+	 */
+	async dispose(): Promise<void> {
+		if (this.disposed) return;
+		this.disposed = true;
+		this.input.close();
+		try {
+			await this.handle?.dispose();
+		} catch {
+			// best-effort teardown; the actor is being discarded regardless.
+		}
+		this.handle = undefined;
 	}
 
 	/** Change the agent permission mode (applies to subsequent tool calls). */
@@ -394,6 +417,9 @@ export class SessionActor {
 			}
 			this.setStatus("idle");
 		} catch (err) {
+			// A teardown (dispose closing the generator) can surface as a throw — that's
+			// expected shutdown, not a session error worth surfacing to clients.
+			if (this.disposed) return;
 			const message = err instanceof Error ? err.message : String(err);
 			this.record({ type: "error", sessionId: this.id, message });
 			this.setStatus("idle");

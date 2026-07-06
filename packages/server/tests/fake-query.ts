@@ -14,6 +14,7 @@ export interface FakeQuery {
 	options(): QueryOptions | undefined;
 	prompt(): AsyncIterable<UserInputMessage> | undefined;
 	interrupted(): boolean;
+	disposed(): boolean;
 	modeSet(): PermissionMode | undefined;
 }
 
@@ -22,6 +23,7 @@ export function makeFakeQuery(): FakeQuery {
 	let captured: QueryOptions | undefined;
 	let capturedPrompt: AsyncIterable<UserInputMessage> | undefined;
 	let didInterrupt = false;
+	let didDispose = false;
 	let lastMode: PermissionMode | undefined;
 
 	const runQuery: RunQuery = (prompt, options) => {
@@ -31,10 +33,15 @@ export function makeFakeQuery(): FakeQuery {
 			[Symbol.asyncIterator]: () => out[Symbol.asyncIterator](),
 			interrupt: async () => {
 				didInterrupt = true;
-				out.close();
 			},
 			setPermissionMode: async (mode) => {
 				lastMode = mode;
+			},
+			dispose: async () => {
+				// Real dispose closes the generator → the consume loop ends. Model that by
+				// closing the output stream so `for await (…of handle)` completes.
+				didDispose = true;
+				out.close();
 			},
 		};
 		return handle;
@@ -47,6 +54,7 @@ export function makeFakeQuery(): FakeQuery {
 		options: () => captured,
 		prompt: () => capturedPrompt,
 		interrupted: () => didInterrupt,
+		disposed: () => didDispose,
 		modeSet: () => lastMode,
 	};
 }

@@ -11,15 +11,25 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { deleteSession, getSessionMessages, listSessions, query, renameSession } from "@anthropic-ai/claude-agent-sdk";
+import type { SdkMessage } from "@occ/protocol";
 import { classifyHolders, isDescendant, parseEntry, type RegistryEntry } from "./external-activity";
 import type {
 	DeleteStored,
 	DetectExternalActivity,
 	ListStored,
 	LoadHistory,
+	QueryHandle,
 	RenameStored,
 	RunQuery,
 } from "./ports";
+
+/** The subset of the SDK `Query` (an AsyncGenerator) that we drive. */
+interface SdkQuery extends AsyncGenerator<unknown, void> {
+	interrupt(): Promise<void>;
+	setPermissionMode(mode: string): Promise<void>;
+	/** Forcefully ends the query and terminates the CLI subprocess (per SDK docs). */
+	close(): void;
+}
 
 export const runQuery: RunQuery = (prompt, options) => {
 	const q = query({
@@ -33,8 +43,26 @@ export const runQuery: RunQuery = (prompt, options) => {
 			canUseTool: options.canUseTool as never,
 			...(options.resume ? { resume: options.resume } : {}),
 		} as never,
-	});
-	return q as unknown as ReturnType<RunQuery>;
+	}) as unknown as SdkQuery;
+
+	// Wrap (not mutate) the SDK object so `dispose()` can close the generator — the
+	// ONLY thing that terminates the CLI subprocess. `interrupt()` cancels the turn
+	// but leaves the child resident; without dispose, every drop/reap orphans one.
+	const handle: QueryHandle = {
+		[Symbol.asyncIterator]: () => q[Symbol.asyncIterator]() as AsyncIterator<SdkMessage>,
+		interrupt: () => q.interrupt(),
+		setPermissionMode: (mode) => q.setPermissionMode(mode),
+		dispose: async () => {
+			try {
+				// close() (NOT return()) is what actually terminates the CLI subprocess —
+				// it forcefully ends the query and cleans up the child + MCP transports.
+				q.close();
+			} catch {
+				// best-effort teardown; the actor is being discarded regardless.
+			}
+		},
+	};
+	return handle;
 };
 
 /** Enumerate persisted sessions for the vault dir, newest first, titled for display. */

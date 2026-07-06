@@ -238,7 +238,7 @@ describe("SessionManager", () => {
 
 		expect(reloaded).toBe(actor); // same live actor — not torn down
 		expect(loads).toBe(1); // no fresh disk read
-		expect(fake.interrupted()).toBe(false); // query left running, pending promise intact
+		expect(fake.disposed()).toBe(false); // subprocess left running, pending promise intact
 		expect(decision).toBeInstanceOf(Promise); // silence unused-var lint
 	});
 
@@ -314,7 +314,7 @@ describe("SessionManager", () => {
 		expect(deleted).toEqual(["sess-del"]);
 		expect(manager.get("sess-del")).toBeUndefined(); // dropped from index
 		expect(manager.list()).toHaveLength(0); // dropped from the active set
-		expect(fake.interrupted()).toBe(true); // the running query was interrupted
+		expect(fake.disposed()).toBe(true); // the running query was TORN DOWN (subprocess freed), not just interrupted
 	});
 
 	it("deleteSession still drops the actor when the store delete fails (not persisted)", async () => {
@@ -339,14 +339,15 @@ describe("SessionManager", () => {
 		expect(deleted).toEqual(["stored-only"]);
 	});
 
-	it("deleteSession tolerates an interrupt failure", async () => {
+	it("deleteSession tolerates a teardown failure", async () => {
 		const manager = new SessionManager(
 			{
 				runQuery: () => ({
 					async *[Symbol.asyncIterator]() {
 						/* immediately done */
 					},
-					interrupt: async () => {
+					interrupt: async () => undefined,
+					dispose: async () => {
 						throw new Error("boom");
 					},
 					setPermissionMode: async () => undefined,
