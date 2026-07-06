@@ -6,6 +6,60 @@ Each entry is ≤200 words (longer when a hard-won investigation is worth preser
 
 ---
 
+## TDL-20260706-001: `@`-mention files are read but invisible; attachments are unrecoverable from the SDK
+
+**Date:** 2026-07-06
+**Status:** Investigated — quoting fix shipped (commit `263c8c7`); "attachment chip" feature **rejected as infeasible**.
+
+**Context:** A user reported that `@`-autocompleted filenames "don't get read" unless
+single-quoted, and cited a session where Claude claimed to have read a file with no
+visible Read. Two questions: (a) does an unquoted `@path` actually get read, and (b) can
+the plugin surface the file so the user sees it happen?
+
+**What `@`-mentions actually do (each measured, not theorised):**
+
+- **Unquoted `@path` (no spaces):** the SDK auto-expands it into an inline file
+  attachment injected into the model's INPUT context. The model sees the full file;
+  **no Read tool call is made.** So it *is* read — just invisibly.
+- **Unquoted `@path with spaces`:** the SDK's parser truncates at the first space →
+  broken, no expansion. The vault has many space-containing names → this is the real bug.
+- **Quoted `@'path'`:** NOT auto-expanded; the literal reaches the model, which issues a
+  **visible `Read`** tool call. This is what the quoting fix relies on (`spliceMention`
+  now inserts `@'path'`). Net effect: turns the common case from invisible-inline into a
+  visible Read, and fixes space-containing paths.
+
+**The attachment is unrecoverable — why the "chip" idea was dropped.** The attachment is
+an input-side prompt expansion; the SDK never emits it as an output/render event, so there
+is no `type:file` datum for us to render (neither "which file" nor "N lines"):
+
+- **History path:** `getSessionMessages` returns the first user turn as a plain string
+  with the attachment **stripped** — no file content, no separate attachment entry. The raw
+  on-disk `.jsonl` *does* contain `type:"attachment"` records, but the SDK API filters them.
+- **Live path:** the streaming `query()` output is only `system(init/status/thinking_tokens)`
+  + `assistant` + `result`. No `user`/`attachment` message carries the file.
+
+**Decision:** Ship the quoting fix (visible Reads + fixes spaces); do **not** build an
+attachment chip — the data literally does not reach us. The only `@`-signal we hold is the
+user's own prompt text (buffered as `user_echo`); a chip parsed from that would show a
+*reference*, not proof-of-read, which the visible Read already provides.
+
+**How to re-verify (both probes; run inside `packages/server/` so `@anthropic-ai/claude-agent-sdk`
+resolves):**
+
+1. *History strips attachments* — `getSessionMessages("<sessionId>", { dir: "<vaultCwd>" })`
+   and inspect the first `type:user` message: its `content` is a string with the mentioned
+   file's text **absent**. (Verified against session `b1b748ac-0f30-40e9-b60a-5d6f097839ab`:
+   8011-char string, no `Notes.md` body; the raw `.jsonl` line `type:"attachment"` holds the
+   full 99-line file, byte-identical to disk.)
+2. *Live stream omits attachments* — `query()` with a streaming-input prompt
+   `"read @hello.md ..."` (unquoted) in a temp cwd containing `hello.md` with a unique
+   marker, `permissionMode:"bypassPermissions"`. Log every non-`stream_event` message: the
+   marker appears only in the assistant's thinking/text (it was read), in **no** streamed
+   `user`/`system`/attachment message. No Read tool call is emitted for the unquoted mention.
+
+**Files:** `packages/plugin/src/file-suggest.ts` (`spliceMention` quoting) + tests. No
+server/protocol change. See also memory `occ-mention-attachments-not-surfaced`.
+
 ## TDL-20260626-001: Per-platform keyboard layout (iPhone vs iPad), and a settings-gated debug panel
 
 **Date:** 2026-06-26
