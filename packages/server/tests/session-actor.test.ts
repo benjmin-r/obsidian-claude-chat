@@ -98,6 +98,21 @@ describe("SessionActor", () => {
 		expect(actor.status).toBe("working");
 	});
 
+	it("denies AskUserQuestion with a plain-text instruction (no dialog support)", async () => {
+		const { fake, actor } = makeActor();
+		actor.enqueue("hi");
+		const result = await fake.options()!.canUseTool(
+			"AskUserQuestion",
+			{ questions: [{ question: "Which?", header: "Q", options: [] }] },
+			{ toolUseID: "q1" }
+		);
+		expect(result).toMatchObject({ behavior: "deny" });
+		expect((result as { message: string }).message).toMatch(/plain text/i);
+		// It resolves inline — no permission round-trip, no awaiting_permission.
+		expect(actor.status).toBe("working");
+		expect(actor.hasPendingPermissions).toBe(false);
+	});
+
 	it("routes destructive tools through a permission round-trip (allow)", async () => {
 		const { fake, actor } = makeActor();
 		const events = collect(actor);

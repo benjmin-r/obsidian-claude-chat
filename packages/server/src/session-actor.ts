@@ -329,6 +329,22 @@ export class SessionActor {
 	private readonly lastInputs = new Map<string, Record<string, unknown>>();
 
 	private readonly canUseTool: CanUseTool = (toolName, input, opts) => {
+		// AskUserQuestion renders an interactive multiple-choice dialog. This headless
+		// server declares no `supportedDialogKinds`, so the SDK fails the dialog closed
+		// and the tool resolves as "The user did not answer the questions." — which
+		// Claude reads as "proceed without input" and answers its own questions. Deny it
+		// instead, instructing Claude to ask in plain text and wait, so the user actually
+		// gets to answer (as a normal turn). See memory occ-bug-followup-questions-not-rendered.
+		if (toolName === "AskUserQuestion") {
+			console.log(`[occ][perm] DENY (AskUserQuestion→plain-text) session=${this.id} id=${opts.toolUseID ?? "?"}`);
+			return Promise.resolve<PermissionResult>({
+				behavior: "deny",
+				message:
+					"Interactive multiple-choice questions aren't supported in this chat. Ask your " +
+					"question(s) as plain text in your reply, then stop and wait for the user's answer — " +
+					"do not assume an answer or continue until they reply.",
+			});
+		}
 		if (!isDestructive(toolName, input)) {
 			return Promise.resolve<PermissionResult>({ behavior: "allow", updatedInput: input });
 		}
