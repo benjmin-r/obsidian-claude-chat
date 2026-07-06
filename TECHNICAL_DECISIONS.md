@@ -6,6 +6,43 @@ Each entry is ≤200 words (longer when a hard-won investigation is worth preser
 
 ---
 
+## TDL-20260706-005: Terminate the SDK subprocess on drop (fix the process leak)
+
+**Date:** 2026-07-06
+**Status:** Implemented (`227173a`), live-verified
+
+**Context:** A production incident took the host (Hetzner CX23, 3.7 GiB, no swap) into
+page-cache thrash: ~20 resident `claude-agent-sdk` subprocesses (~165 MB each ≈ whole
+machine), only ~3 distinct session ids among them (one session on **5** concurrent
+processes), one alive ~28 h. A handoff note blamed the plugin — wrong: the plugin spawns
+nothing; the **server** owns the SDK subprocesses (TDL-20260617-001).
+
+**Root cause:** `SessionManager.dropActor` (the sole teardown, used by reload / release /
+delete / idle-reap) called **only** `actor.interrupt()`. `interrupt()` cancels the current
+*turn*; the streaming-input query stays open awaiting stdin, so the CLI subprocess stays
+resident. Nothing terminated it → every reload/reap orphaned one (and a reload does
+drop-old + spawn-new for the same id → the "5 per session").
+
+**Decision:** Add real teardown distinct from turn-cancel.
+- The SDK `Query` (an AsyncGenerator) has `close()` — "terminate the underlying process…
+  including the CLI subprocess" (aborts, ends stdin, SIGKILL after a 5 s grace). Crucially
+  `q.return()` and `interrupt()` do **not** kill the child; `close()` does.
+- `QueryHandle.dispose()` (port) → `sdk-adapter` wraps the query object and implements it as
+  `q.close()`. `SessionActor.dispose()` closes the input queue (EOF stdin) then disposes the
+  handle; idempotent (`disposed` flag), blocks restart, and the consume-loop catch ignores
+  teardown throws. `dropActor` now calls `dispose()`; `interrupt()` stays for the Stop button.
+
+**Verification:** a real `deleteSession → dropActor → dispose → q.close()` reaps the child
+within ~1 s. **Test gotcha:** the SDK's 5 s SIGKILL timer is `.unref()`'d, so a probe that
+`process.exit()`s early cancels it and the child looks like it survived — keep the process
+alive ≥6 s when re-testing.
+
+**Consequences / follow-ups:** the leak is fixed; a **concurrency cap** (defence-in-depth
+against future leaks) and a startup orphan sweep are left as optional follow-ups (a
+`systemctl restart` already clears any backlog via the service cgroup). Infra advice
+(swap + watchdog) is out of scope and does not replace this fix.
+**Files:** `packages/server/src/{ports,sdk-adapter,session-actor,session-manager}.ts` + tests.
+
 ## TDL-20260706-004: AskUserQuestion → deny-to-plain-text (no interactive picker)
 
 **Date:** 2026-07-06
