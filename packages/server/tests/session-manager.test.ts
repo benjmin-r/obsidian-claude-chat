@@ -11,6 +11,7 @@ function makeManager(
 		deleteStored?: DeleteStored;
 		detectExternalActivity?: DetectExternalActivity;
 		now?: () => number;
+		maxLiveSessions?: number;
 	} = {}
 ) {
 	const fake = makeFakeQuery();
@@ -26,7 +27,7 @@ function makeManager(
 			deleteStored: opts.deleteStored ?? (async () => undefined),
 			detectExternalActivity: opts.detectExternalActivity,
 		},
-		{ cwd: "/v", defaultModel: "claude-opus-4-8" }
+		{ cwd: "/v", defaultModel: "claude-opus-4-8", maxLiveSessions: opts.maxLiveSessions }
 	);
 	return { fake, manager };
 }
@@ -147,6 +148,56 @@ describe("SessionManager", () => {
 		now = 60_000; // only 1 min
 		manager.reapIdle(5 * 60_000);
 		expect(manager.get(a.handleId)).toBe(a);
+	});
+
+	describe("live-session cap", () => {
+		it("evicts the least-recently-active idle, detached actor when at the cap", () => {
+			let now = 0;
+			const { manager } = makeManager({ now: () => now, maxLiveSessions: 2 });
+			now = 1;
+			const a = manager.create(); // oldest, idle, detached
+			now = 2;
+			const b = manager.create();
+			expect(manager.list()).toHaveLength(2);
+
+			now = 3;
+			const c = manager.create(); // at cap → evict the oldest idle+detached (a)
+
+			expect(manager.get(a.handleId)).toBeUndefined(); // evicted (dropActor disposes it)
+			expect(manager.get(b.handleId)).toBe(b);
+			expect(manager.get(c.handleId)).toBe(c);
+			expect(manager.list()).toHaveLength(2); // held at the cap
+		});
+
+		it("never evicts working or attached actors (exceeds the cap rather than orphan them)", () => {
+			let now = 0;
+			const { manager } = makeManager({ now: () => now, maxLiveSessions: 2 });
+			now = 1;
+			const working = manager.create();
+			working.enqueue("hi"); // status → working, not reapable
+			now = 2;
+			const attached = manager.create();
+			attached.subscribe(() => undefined); // a client is viewing it, not reapable
+			now = 3;
+			const fresh = manager.create(); // at cap, nothing reapable → soft-exceed
+
+			expect(manager.get(working.handleId)).toBe(working); // untouched
+			expect(manager.get(attached.handleId)).toBe(attached); // untouched
+			expect(manager.get(fresh.handleId)).toBe(fresh);
+			expect(manager.list()).toHaveLength(3); // temporarily over the cap of 2
+		});
+
+		it("also enforces the cap on resumed sessions", async () => {
+			let now = 0;
+			const { manager } = makeManager({ now: () => now, maxLiveSessions: 1 });
+			now = 1;
+			const a = manager.create(); // idle, detached
+			now = 2;
+			const b = await manager.resumeWithHistory("sess-b"); // at cap → evicts a
+			expect(manager.get(a.handleId)).toBeUndefined();
+			expect(manager.get("sess-b")).toBe(b);
+			expect(manager.list()).toHaveLength(1);
+		});
 	});
 
 	/** Start an actor and raise a real destructive-tool permission request on it. */

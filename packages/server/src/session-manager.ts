@@ -14,7 +14,12 @@ export interface SessionManagerConfig {
 	cwd: string;
 	defaultModel: string;
 	bufferLimit?: number;
+	/** Max live actors (≈ live SDK subprocesses) kept at once; see {@link makeRoomForNewActor}. */
+	maxLiveSessions?: number;
 }
+
+/** Cap on simultaneous live sessions — a RAM backstop (each subprocess is ~165 MB). */
+const DEFAULT_MAX_LIVE_SESSIONS = 6;
 
 /** Result of the pre-send guard. */
 export type SendGate = "ok" | "external";
@@ -41,12 +46,14 @@ export class SessionManager {
 	private readonly aliasUnsub = new Map<SessionActor, () => void>();
 
 	private readonly detect: DetectExternalActivity;
+	private readonly maxLiveSessions: number;
 
 	constructor(
 		private readonly deps: SessionManagerDeps,
 		private readonly config: SessionManagerConfig
 	) {
 		this.detect = deps.detectExternalActivity ?? (() => ({ severity: "none" }));
+		this.maxLiveSessions = config.maxLiveSessions ?? DEFAULT_MAX_LIVE_SESSIONS;
 	}
 
 	/**
@@ -264,7 +271,33 @@ export class SessionManager {
 		return [...active, ...storedOnly].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
 	}
 
+	/**
+	 * Enforce the live-session cap before adding a new actor: evict the
+	 * least-recently-active idle, DETACHED actor to free its subprocess. Working,
+	 * awaiting-permission, and actively-viewed (client-attached) actors are never
+	 * touched — if none qualify we briefly exceed the cap rather than orphan a live
+	 * turn (the idle reaper reclaims them shortly after). A RAM backstop, not a hard
+	 * admission gate: `create()` etc. always return an actor.
+	 */
+	private makeRoomForNewActor(): void {
+		if (this.actors.size < this.maxLiveSessions) return;
+		let victim: SessionActor | undefined;
+		for (const actor of this.actors) {
+			if (actor.status !== "idle" || actor.clientListenerCount !== 0) continue;
+			if (!victim || actor.updatedAt < victim.updatedAt) victim = actor;
+		}
+		if (victim) {
+			console.log(`[occ] live-session cap (${this.maxLiveSessions}) reached — evicting idle session=${victim.id}`);
+			this.dropActor(victim);
+		} else {
+			console.warn(
+				`[occ] live-session cap (${this.maxLiveSessions}) reached but all sessions are active — exceeding cap temporarily`
+			);
+		}
+	}
+
 	private register(actor: SessionActor, id: string): void {
+		this.makeRoomForNewActor();
 		this.actors.add(actor);
 		this.index.set(id, actor);
 		// Learn the canonical SDK id as soon as it is reported, and alias it.
