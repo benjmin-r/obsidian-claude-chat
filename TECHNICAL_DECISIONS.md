@@ -6,6 +6,83 @@ Each entry is ≤200 words (longer when a hard-won investigation is worth preser
 
 ---
 
+## TDL-20260706-004: AskUserQuestion → deny-to-plain-text (no interactive picker)
+
+**Date:** 2026-07-06
+**Status:** Implemented (`7fd946d`). Native picker **rejected**.
+
+**Context:** Claude's `AskUserQuestion` tool renders an interactive multiple-choice
+dialog. This headless server declares no `supportedDialogKinds`, so the SDK fails the
+dialog closed and the tool resolves `"The user did not answer the questions."` — which
+Claude reads as "proceed" and answers its own questions (the user never replies). Seen
+in session `0816ee44…`.
+
+**Decision:** Special-case `toolName === "AskUserQuestion"` in `SessionActor.canUseTool`
+(before the `isDestructive` check) → return `{behavior:"deny", message: "…ask as plain
+text, then stop and wait…"}`. `canUseTool` can only allow/deny (`PermissionResult`), so
+it cannot inject a successful `tool_result` — deny-to-text is the only lever. Verified
+live: Claude re-asks the question as prose with its options and ends the turn awaiting
+the user. Follow-ups are then answered by a normal message turn.
+
+**Rejected — native picker:** the SDK exposes it via `onUserDialog` +
+`supportedDialogKinds` (a `request_user_dialog` control request; kind likely
+`quick_question`). Dropped by owner as too unstable: payload/result shapes are opaque,
+per-kind, undocumented and version-fragile, for marginal gain over plain text. Do not
+build it.
+
+**Consequences:** no picker UI; if a future SDK routes `AskUserQuestion` around
+`canUseTool`, revisit. **Files:** `packages/server/src/session-actor.ts` + tests.
+
+## TDL-20260706-003: First user prompt stays visible on a new session
+
+**Date:** 2026-07-06
+**Status:** Implemented (`b8f8f17`, extends TDL-20260624-002)
+
+**Context:** Sending the first prompt on a brand-new session left no user bubble — it
+vanished until a later reload replayed it from disk.
+
+**Cause:** `dispatchSend` appended the user bubble optimistically *before*
+`client.newSession()` completed. The new session's attach emits `attach_reset`
+(TDL-20260624-002), which the reducer uses to clear the transcript — wiping the
+just-added bubble. The turn is then enqueued as a **non-broadcast** `user_echo` (the
+server assumes the live client already shows it optimistically), so nothing re-displayed
+it until reload.
+
+**Decision:** Don't append optimistically in the new-session branch; append when
+flushing `pendingText` at the first `session_status` (which arrives *after*
+`attach_reset`), mirroring the existing-session send path where no re-attach occurs.
+
+**Consequences:** on a brand-new session the bubble appears one round-trip later
+(negligible on the tailnet), with no flicker. `chat-view.ts` only; no chat-view unit
+tests (thin DOM layer). **Files:** `packages/plugin/src/chat-view.ts`.
+
+## TDL-20260706-002: `awaiting_permission` lifecycle — reload guard + 1 h auto-deny reap
+
+**Date:** 2026-07-06
+**Status:** Implemented (`53c0a1a`, `69e110c`)
+
+**Context:** A pending destructive-tool permission is an unresolved `canUseTool` promise.
+Two failures: **(a)** reloading/dropping a session while it awaits permission interrupts
+the SDK query, abandoning the promise → the SDK records the tool *rejected* with no user
+decision ("rejected on reload"); **(b)** a detached, never-answered prompt keeps the
+actor pinned in `awaiting_permission` (the idle reaper only touches `idle` actors) —
+holding its SDK subprocess open.
+
+**Decision:** **(a)** `reloadSession` returns the live actor untouched when
+`hasPendingPermissions` (the re-attach re-surfaces the request via `subscribe`) instead
+of drop+recreate. **(b)** `reapIdle` gains a separate `permissionMaxIdleMs` (wired 1 h): a
+detached `awaiting_permission` actor past it gets `autoDenyPending()` — resolving the
+promise as an explicit deny the SDK records as a real decision — after which the turn
+completes and the actor falls `idle`, becoming reap-eligible. A bare interrupt/drop can't
+be used here (that reintroduces (a)).
+
+**Consequences:** you can still answer a prompt after re-attaching; abandoned prompts are
+bounded to ~1 h. `deleteSession` still drops intentionally. **Caveat:** becoming
+reap-eligible does not by itself reclaim the OS subprocess — `dropActor` currently only
+`interrupt()`s and never terminates the child (see the separate subprocess-leak work);
+this entry fixes the *stuck-actor* half, not the subprocess teardown.
+**Files:** `packages/server/src/{session-actor,session-manager,index}.ts` + tests.
+
 ## TDL-20260706-001: `@`-mention files are read but invisible; attachments are unrecoverable from the SDK
 
 **Date:** 2026-07-06
