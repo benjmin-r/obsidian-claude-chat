@@ -696,11 +696,14 @@ export class ChatView extends ItemView {
 			this.client.userMessage(this.state.sessionId, text);
 			this.state = appendUserMessage(this.state, text);
 		} else {
-			// no session yet — open one and flush the text when it is ready.
+			// No session yet — open one and flush the text when it's ready. Do NOT append
+			// the user bubble optimistically here: the new session's attach emits an
+			// `attach_reset` that would wipe it (leaving the first prompt invisible until a
+			// reload). Append it when we flush pendingText, after the reset — see onEvent →
+			// session_status.
 			this.pendingText = text;
 			this.applyDesiredMode = true;
 			this.client.newSession(this.selectedModel);
-			this.state = appendUserMessage(this.state, text);
 		}
 		this.render();
 	}
@@ -753,8 +756,13 @@ export class ChatView extends ItemView {
 		}
 		if (event.type === "session_status" && event.sessionId) {
 			if (this.pendingText) {
-				this.client.userMessage(event.sessionId, this.pendingText);
+				const pending = this.pendingText;
 				this.pendingText = undefined;
+				this.client.userMessage(event.sessionId, pending);
+				// Append the user bubble now — AFTER this attach's `attach_reset` — so it
+				// isn't wiped. The server buffers it as a non-broadcast `user_echo`, so this
+				// optimistic copy is the only live one (mirrors the existing-session send).
+				this.state = appendUserMessage(this.state, pending);
 			}
 			// Carry the chosen permission mode into a freshly-started session.
 			if (this.applyDesiredMode) {
