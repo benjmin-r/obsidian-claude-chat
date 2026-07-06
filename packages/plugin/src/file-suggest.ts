@@ -30,8 +30,10 @@ export function findMentionQuery(text: string, caret: number): MentionQuery | nu
 }
 
 /**
- * Replace the `@query` spanning `[start, caret)` with `@path ` (trailing space so
- * the next keystroke starts a fresh word). Returns the new buffer and caret. Pure.
+ * Replace the `@query` spanning `[start, caret)` with `@'path' ` (single-quoted so
+ * the agent reads paths containing spaces or other shell-special characters, plus a
+ * trailing space so the next keystroke starts a fresh word). Returns the new buffer
+ * and caret. Pure.
  */
 export function spliceMention(
 	text: string,
@@ -39,7 +41,7 @@ export function spliceMention(
 	caret: number,
 	path: string
 ): { text: string; caret: number } {
-	const before = text.slice(0, start) + `@${path} `;
+	const before = text.slice(0, start) + `@'${path}' `;
 	return { text: before + text.slice(caret), caret: before.length };
 }
 

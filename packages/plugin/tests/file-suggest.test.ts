@@ -34,17 +34,22 @@ describe("findMentionQuery", () => {
 });
 
 describe("spliceMention", () => {
-	it("replaces the @query with @path and a trailing space", () => {
+	it("replaces the @query with a single-quoted @path and a trailing space", () => {
 		const r = spliceMention("@No", 0, 3, "Daily/Note.md");
-		expect(r.text).toBe("@Daily/Note.md ");
+		expect(r.text).toBe("@'Daily/Note.md' ");
 		expect(r.caret).toBe(r.text.length);
 	});
 
 	it("preserves text on both sides of the mention", () => {
 		const r = spliceMention("read @al please", 5, 8, "Projects/Alpha.md");
-		expect(r.text).toBe("read @Projects/Alpha.md  please");
+		expect(r.text).toBe("read @'Projects/Alpha.md'  please");
 		// caret lands right after the inserted path's trailing space.
-		expect(r.text.slice(0, r.caret)).toBe("read @Projects/Alpha.md ");
+		expect(r.text.slice(0, r.caret)).toBe("read @'Projects/Alpha.md' ");
+	});
+
+	it("quotes paths containing spaces so the agent reads them as one path", () => {
+		const r = spliceMention("@My", 0, 3, "01-Projects/My Notes/Draft.md");
+		expect(r.text).toBe("@'01-Projects/My Notes/Draft.md' ");
 	});
 });
 
@@ -124,11 +129,11 @@ describe("FileSuggest", () => {
 		expect(items()[items().length - 1]!.classList.contains("is-active")).toBe(true);
 	});
 
-	it("accepts the active item with Enter and inserts @path ", () => {
+	it("accepts the active item with Enter and inserts a quoted @path ", () => {
 		type("@no");
 		const enter = new KeyboardEvent("keydown", { key: "Enter" });
 		expect(suggest.handleKeydown(enter)).toBe(true);
-		expect(input.value).toBe("@Daily/Note.md ");
+		expect(input.value).toBe("@'Daily/Note.md' ");
 		expect(suggest.isOpen()).toBe(false);
 	});
 
@@ -136,13 +141,13 @@ describe("FileSuggest", () => {
 		type("@no");
 		suggest.handleKeydown(new KeyboardEvent("keydown", { key: "ArrowDown" }));
 		suggest.handleKeydown(new KeyboardEvent("keydown", { key: "Tab" }));
-		expect(input.value).toBe("@notes.md ");
+		expect(input.value).toBe("@'notes.md' ");
 	});
 
 	it("accepts on item mousedown", () => {
 		type("@no");
 		items()[1]!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-		expect(input.value).toBe("@notes.md ");
+		expect(input.value).toBe("@'notes.md' ");
 		expect(suggest.isOpen()).toBe(false);
 	});
 
@@ -150,7 +155,7 @@ describe("FileSuggest", () => {
 		type("ping @al here", 8); // caret right after "@al"
 		const enter = new KeyboardEvent("keydown", { key: "Enter" });
 		suggest.handleKeydown(enter);
-		expect(input.value).toBe("ping @Projects/Alpha.md  here");
+		expect(input.value).toBe("ping @'Projects/Alpha.md'  here");
 	});
 
 	it("does not consume keys it doesn't handle", () => {
