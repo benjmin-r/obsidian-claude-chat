@@ -79,15 +79,15 @@ npm install
 npm run build        # builds protocol → server → plugin
 
 # Configure the token + bind address (never commit this file):
-cp packages/server/claude-anywhere-sdk.env.example ~/.config/claude-anywhere-sdk.env
-chmod 600 ~/.config/claude-anywhere-sdk.env
+cp packages/server/occ-server.env.example ~/.config/occ-server.env
+chmod 600 ~/.config/occ-server.env
 # edit it: set OCC_TOKEN (openssl rand -hex 32) and OCC_HOST (the Tailscale IP)
 
 # Install the systemd unit:
-sudo cp packages/server/claude-anywhere-sdk.service /etc/systemd/system/
+sudo cp packages/server/occ-server.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now claude-anywhere-sdk.service
-journalctl -u claude-anywhere-sdk -f      # should log: listening on ws://<tailscale-ip>:8765
+sudo systemctl enable --now occ-server.service
+journalctl -u occ-server -f      # should log: listening on ws://<tailscale-ip>:8765
 ```
 
 **Security notes**

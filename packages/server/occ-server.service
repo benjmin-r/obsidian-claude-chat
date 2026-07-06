@@ -1,5 +1,5 @@
 [Unit]
-Description=Claude Anywhere SDK service (structured Obsidian chat over the Agent SDK)
+Description=OCC server (structured Obsidian chat over the Claude Agent SDK)
 # Tailscale must be up first: we bind to the tailnet IP only.
 After=network-online.target tailscaled.service
 Wants=network-online.target
@@ -22,7 +22,7 @@ Environment=PATH=/home/USER/.local/share/npm/bin:/usr/local/bin:/usr/bin:/bin
 #   OCC_PORT=8765
 #   OCC_VAULT_CWD=/home/USER/vaults/VAULT
 #   OCC_MODEL=claude-opus-4-8
-EnvironmentFile=/home/USER/.config/claude-anywhere-sdk.env
+EnvironmentFile=/home/USER/.config/occ-server.env
 
 # SECURITY: ANTHROPIC_API_KEY is intentionally NOT set. If it were set the SDK
 # would switch from the subscription to metered API billing. Do not add it.

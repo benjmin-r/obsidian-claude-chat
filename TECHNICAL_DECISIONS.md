@@ -6,6 +6,27 @@ Each entry is ≤200 words (longer when a hard-won investigation is worth preser
 
 ---
 
+## TDL-20260706-006: Rename the server service `claude-anywhere-sdk` → `occ-server`
+
+**Date:** 2026-07-06
+**Status:** Implemented + migrated on the host
+
+**Context:** The systemd service kept an early-version name, `claude-anywhere-sdk`,
+inconsistent with the `@occ/*` package namespace.
+
+**Decision:** Rename to **`occ-server`** (matches `@occ/server`). Pure ops/docs — no
+`src/` change. In-repo: `packages/server/{occ-server.service,occ-server.env.example}`
+(unit `Description=` + `EnvironmentFile=` → `~/.config/occ-server.env`), README install
+steps. Live migration on the host: installed the new unit (preserving the deployed unit's
+real paths, not the repo template's `USER`/`VAULT` placeholders), `disable --now` the old
+unit, `mv ~/.config/claude-anywhere-sdk.env → occ-server.env` (holds the bearer token,
+stays `chmod 600`), `enable --now occ-server.service`, removed the old unit. Verified
+active + listening.
+
+**Consequences:** deploy runbooks now restart `occ-server.service`; the earlier TDL that
+lists `claude-anywhere-sdk.service` (TDL-20260617-004) is a historical record, annotated.
+**Files:** `packages/server/{occ-server.service,occ-server.env.example}`, `README.md`.
+
 ## TDL-20260706-005: Terminate the SDK subprocess on drop (fix the process leak)
 
 **Date:** 2026-07-06
@@ -746,7 +767,7 @@ button per session in the plugin picker.
 
 **Files:**
 
-- `packages/server/src/{config.ts,sdk-adapter.ts}`, `packages/server/claude-anywhere-sdk.service`
+- `packages/server/src/{config.ts,sdk-adapter.ts}`, `packages/server/occ-server.service` (was `claude-anywhere-sdk.service`; renamed in TDL-20260706-006)
 
 ---
 
