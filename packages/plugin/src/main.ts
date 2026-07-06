@@ -1,5 +1,6 @@
-import { Plugin } from "obsidian";
+import { Notice, Plugin } from "obsidian";
 import { ChatView, VIEW_TYPE_CLAUDE_CHAT } from "./chat-view";
+import { ConversationSuggest, insertConversationLink } from "./link-insert";
 import { ClaudeChatSettingTab } from "./settings";
 import { DEFAULT_SETTINGS, type ClaudeChatSettings } from "./settings-types";
 
@@ -27,7 +28,33 @@ export default class ClaudeChatPlugin extends Plugin {
 			callback: () => void this.openInTab(),
 		});
 
+		// Link to conversations from notes: `[title](obsidian://occ-chat?session=<id>)`.
+		this.addCommand({
+			id: "insert-conversation-link",
+			name: "Insert link to a Claude conversation",
+			editorCallback: (editor) => void insertConversationLink(this, editor),
+		});
+		// Inline `/occ` autocomplete in the editor inserts the same link.
+		this.registerEditorSuggest(new ConversationSuggest(this));
+		// Route occ-chat:// links (from notes) to the chat view, opening the session.
+		this.registerObsidianProtocolHandler("occ-chat", (params) => void this.openSessionFromLink(params.session));
+
 		this.addSettingTab(new ClaudeChatSettingTab(this.app, this));
+	}
+
+	/** Open the chat view and switch it to `sessionId` (from an occ-chat:// link). */
+	async openSessionFromLink(sessionId?: string): Promise<void> {
+		if (!sessionId) {
+			new Notice("Claude Chat: link is missing a session id.");
+			return;
+		}
+		await this.activateView();
+		const view = this.app.workspace
+			.getLeavesOfType(VIEW_TYPE_CLAUDE_CHAT)
+			.map((leaf) => leaf.view)
+			.find((v): v is ChatView => v instanceof ChatView);
+		if (view) view.openSession(sessionId);
+		else new Notice("Claude Chat: couldn't open the chat view.");
 	}
 
 	onunload(): void {

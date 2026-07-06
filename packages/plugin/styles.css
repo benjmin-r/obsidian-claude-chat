@@ -675,3 +675,12 @@
 	font-size: 0.75em;
 	color: var(--text-muted);
 }
+
+/* @-mention-style conversation link autocomplete (/occ) */
+.occ-link-suggest-title {
+	font-weight: 500;
+}
+.occ-link-suggest-meta {
+	font-size: 0.75em;
+	color: var(--text-muted);
+}

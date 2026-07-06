@@ -56,6 +56,8 @@ export class ChatView extends ItemView {
 	private state: ChatState;
 	private client!: BridgeClient;
 	private pendingText: string | undefined;
+	/** session to open once the socket is ready (set by openSession before connect). */
+	private pendingOpenSession: string | undefined;
 	/** last text dispatched to the server; used to roll back if the server blocks it. */
 	private lastSentText: string | undefined;
 
@@ -662,6 +664,21 @@ export class ChatView extends ItemView {
 	}
 
 	/**
+	 * Open a specific session in this view (e.g. from an `obsidian://occ-chat` link).
+	 * Connection-aware: resumes immediately if the socket is up, else defers until the
+	 * `ready` frame arrives (a freshly-revealed view is still connecting).
+	 */
+	openSession(sessionId: string): void {
+		this.pendingOpenSession = undefined;
+		if (this.client?.isConnected()) {
+			this.resumeSession(sessionId);
+		} else {
+			this.pendingOpenSession = sessionId;
+			this.client?.connect(); // idempotent if already connecting; onEvent(ready) flushes it
+		}
+	}
+
+	/**
 	 * Open a session — ALWAYS reloads from disk (drops any cached actor) so the plugin
 	 * shows current content; the re-attach re-checks CLI activity. Used by the picker
 	 * and the read-only banner's Reload button.
@@ -735,6 +752,13 @@ export class ChatView extends ItemView {
 		if (event.type === "send_blocked") {
 			this.restoreBlockedDraft();
 			return; // restoreBlockedDraft re-renders
+		}
+		// A deep-link (openSession) opened this view while still connecting: now that the
+		// socket is ready, resume the requested session.
+		if (event.type === "ready" && this.pendingOpenSession) {
+			const sessionId = this.pendingOpenSession;
+			this.pendingOpenSession = undefined;
+			this.resumeSession(sessionId);
 		}
 		if (event.type === "history_page") {
 			// Capture pre-prepend metrics so render() can keep the viewport stable.

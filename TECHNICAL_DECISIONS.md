@@ -6,6 +6,37 @@ Each entry is ≤200 words (longer when a hard-won investigation is worth preser
 
 ---
 
+## TDL-20260706-007: Link to Claude conversations from notes (`obsidian://occ-chat`)
+
+**Date:** 2026-07-06
+**Status:** Implemented (Phase 1: session-level links)
+
+**Context:** Wanted to link to specific chat conversations from notes (e.g. daily notes) so
+they're findable later. Instinct was a `/`-command that lists sessions and inserts a link
+the plugin can route.
+
+**Decision (Phase 1 — session links):**
+- **Routable URI:** a conversation link is a normal markdown link to
+  `obsidian://occ-chat?session=<id>` (Obsidian intercepts `obsidian://`, not a custom
+  `occ://` scheme). `registerObsidianProtocolHandler("occ-chat", …)` activates the chat
+  view and calls a new connection-aware `ChatView.openSession(id)` — resumes immediately if
+  connected, else defers to the `ready` frame (a freshly-revealed view is still connecting).
+- **Insertion, two entry points sharing `link-insert.ts`:** an `EditorSuggest` triggered by
+  typing `/occ` in a note (the `/`-command feel), and an "Insert link to a Claude
+  conversation" command opening a `FuzzySuggestModal` (discoverable, works anywhere).
+- **Session data:** fetched over a **short-lived** WebSocket (`fetchSessions`, one-shot
+  hello→list_sessions→close), independent of the chat view's persistent socket and cached
+  ~10 s so per-keystroke autocomplete doesn't reconnect. `list_sessions` is safe from any
+  connection.
+- Pure helpers (`occChatUri`, `sessionLabel`, `conversationLinkMarkdown`, `matchOccTrigger`)
+  are unit-tested; the obsidian mock gained `EditorSuggest`/`FuzzySuggestModal` stubs +
+  `registerEditorSuggest`/`registerObsidianProtocolHandler`.
+
+**Deferred (Phase 2):** message-level deep links need stable per-turn anchors (render events
+only carry `toolUseId` today) + scroll-to/highlight on open; the URI already carries an
+optional `&msg=`.
+**Files:** `packages/plugin/src/{link-insert.ts,main.ts,chat-view.ts}`, `styles.css` + tests.
+
 ## TDL-20260706-006: Rename the server service `claude-anywhere-sdk` → `occ-server`
 
 **Date:** 2026-07-06

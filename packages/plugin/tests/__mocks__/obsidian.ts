@@ -209,6 +209,8 @@ export class Plugin {
 	registerView = jest.fn();
 	registerInterval = jest.fn().mockReturnValue(1);
 	registerEvent = jest.fn();
+	registerEditorSuggest = jest.fn();
+	registerObsidianProtocolHandler = jest.fn();
 	addRibbonIcon = jest.fn().mockReturnValue({
 		addClass: jest.fn(),
 		removeClass: jest.fn(),
@@ -594,6 +596,36 @@ export class TFolder {
 export interface MarkdownView {
 	file: TFile;
 	editor: Editor;
+}
+
+// Minimal stubs so modules that subclass these load under Jest (behaviour is
+// exercised via the pure helpers, not these classes).
+export class EditorSuggest<T> {
+	app: App;
+	context: unknown = null;
+	limit = 0;
+	constructor(app: App) {
+		this.app = app;
+	}
+	close(): void {
+		/* no-op */
+	}
+}
+
+export class FuzzySuggestModal<T> {
+	app: App;
+	constructor(app: App) {
+		this.app = app;
+	}
+	setPlaceholder(_placeholder: string): void {
+		/* no-op */
+	}
+	open(): void {
+		/* no-op */
+	}
+	close(): void {
+		/* no-op */
+	}
 }
 
 export interface Editor {
