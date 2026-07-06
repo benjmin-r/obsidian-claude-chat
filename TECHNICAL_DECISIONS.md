@@ -37,11 +37,14 @@ within ~1 s. **Test gotcha:** the SDK's 5 s SIGKILL timer is `.unref()`'d, so a 
 `process.exit()`s early cancels it and the child looks like it survived — keep the process
 alive ≥6 s when re-testing.
 
-**Consequences / follow-ups:** the leak is fixed; a **concurrency cap** (defence-in-depth
-against future leaks) and a startup orphan sweep are left as optional follow-ups (a
-`systemctl restart` already clears any backlog via the service cgroup). Infra advice
-(swap + watchdog) is out of scope and does not replace this fix.
-**Files:** `packages/server/src/{ports,sdk-adapter,session-actor,session-manager}.ts` + tests.
+**Consequences / follow-ups:** the leak is fixed. A **live-session cap of 6** was added as
+defence-in-depth (`bb4c75c`): `makeRoomForNewActor()` at the `register()` choke point evicts
+the least-recently-active idle+detached actor when at the cap (never working / awaiting-
+permission / client-attached ones; soft-exceeds rather than orphan a live turn). A startup
+orphan sweep is still an optional follow-up (a `systemctl restart` already clears any backlog
+via the service cgroup). Infra advice (swap + watchdog) is out of scope and does not replace
+this fix. **Files:** `packages/server/src/{ports,sdk-adapter,session-actor,session-manager}.ts`
++ tests.
 
 ## TDL-20260706-004: AskUserQuestion → deny-to-plain-text (no interactive picker)
 
