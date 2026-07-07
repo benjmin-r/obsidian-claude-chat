@@ -4,6 +4,7 @@ import type ClaudeChatPlugin from "./main";
 import { BridgeClient, type WsLike } from "./bridge-client";
 import { DebugLog } from "./debug-log";
 import { FileSuggest } from "./file-suggest";
+import { conversationLinkMarkdown } from "./link-insert";
 import { MODEL_OPTIONS } from "./settings-types";
 import {
 	applyEvent,
@@ -892,15 +893,29 @@ export class ChatView extends ItemView {
 			const more = item.createEl("button", { cls: "occ-picker-more" });
 			setIcon(more, "more-vertical");
 			more.setAttr("aria-label", "Session actions");
+			const linkMarkdown = conversationLinkMarkdown(s);
 			more.addEventListener("click", (e) => {
 				e.stopPropagation();
-				this.openSessionActions(e, s.sessionId, named || "", label);
+				this.openSessionActions(e, s.sessionId, named || "", label, linkMarkdown);
 			});
 		}
 	}
 
-	private openSessionActions(evt: MouseEvent, sessionId: string, currentTitle: string, label: string): void {
+	private openSessionActions(
+		evt: MouseEvent,
+		sessionId: string,
+		currentTitle: string,
+		label: string,
+		linkMarkdown: string
+	): void {
 		const menu = new Menu();
+		// Copy a note-ready link WITHOUT touching the session (no close/switch).
+		menu.addItem((i) =>
+			i
+				.setTitle("Copy Obsidian link")
+				.setIcon("link")
+				.onClick(() => this.copyToClipboard(linkMarkdown, "Conversation link copied"))
+		);
 		menu.addItem((i) =>
 			i
 				.setTitle("Copy resume command & close session")
