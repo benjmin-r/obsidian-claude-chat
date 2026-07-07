@@ -6,6 +6,42 @@ Each entry is ≤200 words (longer when a hard-won investigation is worth preser
 
 ---
 
+## TDL-20260707-008: Message-level deep links (anchor on the SDK message uuid)
+
+**Date:** 2026-07-07
+**Status:** Implemented (extends TDL-20260706-007)
+
+**Context:** Deep-link to a *specific message*, not just the session. The hard part is a
+stable anchor that's the same in the LIVE view and after the history reload a deep link
+triggers — the two representations otherwise differ (live streams token deltas + thinking;
+history replays one text event per message and drops thinking).
+
+**Key finding (probed):** every SDK message carries a top-level `uuid` that is **identical**
+in the live `query()` stream (`msg.uuid`) and in `getSessionMessages` (thinking and text are
+separate messages, each with its own stable uuid). So the message uuid is a valid anchor
+across both — a link copied live stays valid after reload.
+
+**Decision:** anchor on the message uuid, threaded end-to-end:
+- `loadHistory` keeps `uuid`; `mapHistoryMessages` tags `user_echo` / `assistant_text_delta`
+  inline. Live: a new `message_anchor` render event (protocol) is emitted when a full
+  `assistant` message arrives, tagging the already-streamed bubble (its text/thinking came
+  as id-less deltas). The reducer stores an `id` on each `ChatItem`; tools reuse `toolUseId`.
+- UI: every bubble gets a `⋮` kebab — the old per-message copy moved into it, plus "Copy
+  link to this message" (`…&msg=<uuid>`). Each bubble renders `data-msg-id`.
+- Open flow: `openSession(id, msg)` → `tryResolveDeepLink` pages older (at stable points:
+  `session_status` / `history_page`) until the `[data-msg-id]` loads — which also loads
+  everything *younger* than it — then scrolls to + briefly flashes it; gives up with a
+  notice once history is exhausted.
+
+**Consequences / limits:** user turns have **no uuid in the live stream** (the server
+synthesises `user_echo`), so a just-sent user bubble is linkable only after a reload — the
+link action falls back to a conversation-level link with a notice. Thinking bubbles aren't
+in history, so their links don't resolve post-reload. Protocol changes are additive/
+backward-compatible (an old client ignores `message_anchor` + `messageId`).
+**Files:** `packages/protocol/src/{messages,map-sdk-events}.ts`, `packages/server/src/
+sdk-adapter.ts`, `packages/plugin/src/{view-model,chat-view,link-insert,main}.ts`,
+`styles.css` + tests.
+
 ## TDL-20260706-007: Link to Claude conversations from notes (`obsidian://occ-chat`)
 
 **Date:** 2026-07-06
