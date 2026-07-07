@@ -25,6 +25,8 @@ import type {
 export interface HistoryMessage {
 	type: "user" | "assistant" | "system";
 	message: unknown;
+	/** the SDK message uuid — a stable per-message anchor for deep-linking. */
+	uuid?: string;
 }
 import { sdkSessionId } from "./sdk-types";
 
@@ -37,7 +39,7 @@ export function mapSdkEvent(msg: SdkMessage, sessionId: string): RenderEvent[] {
 		case "stream_event":
 			return mapStreamEvent(msg as SdkStreamEventMessage, sid);
 		case "assistant":
-			return mapAssistant((msg as { message?: { content?: unknown } }).message, sid);
+			return mapAssistant((msg as { message?: { content?: unknown } }).message, sid, false, (msg as { uuid?: string }).uuid);
 		case "user":
 			return mapUserResult((msg as { message?: { content?: unknown } }).message, sid);
 		case "result": {
@@ -78,15 +80,27 @@ function asBlocks(content: unknown): SdkContentBlock[] {
 /**
  * Map an assistant message's blocks. `includeText` is false for live streaming
  * (text already arrived as deltas) and true for history replay (no deltas exist).
+ * `messageId` (the SDK message uuid) anchors the bubble for deep-linking: inline on
+ * the history text event, or via a trailing {@link MessageAnchorEvent} live.
  */
-function mapAssistant(message: { content?: unknown } | undefined, sessionId: string, includeText = false): RenderEvent[] {
+function mapAssistant(
+	message: { content?: unknown } | undefined,
+	sessionId: string,
+	includeText = false,
+	messageId?: string
+): RenderEvent[] {
 	const out: RenderEvent[] = [];
+	let hasText = false;
+	let hasThinking = false;
 	for (const block of asBlocks(message?.content)) {
 		if (block.type === "text") {
+			hasText = true;
 			const text = (block as SdkTextBlock).text;
 			if (includeText && typeof text === "string" && text.length > 0) {
-				out.push({ type: "assistant_text_delta", sessionId, text });
+				out.push({ type: "assistant_text_delta", sessionId, text, ...(messageId ? { messageId } : {}) });
 			}
+		} else if (block.type === "thinking") {
+			hasThinking = true;
 		} else if (block.type === "tool_use") {
 			const tu = block as SdkToolUseBlock;
 			if (tu.name === TODO_TOOL) {
@@ -95,6 +109,12 @@ function mapAssistant(message: { content?: unknown } | undefined, sessionId: str
 				out.push({ type: "tool_use", sessionId, toolUseId: tu.id, name: tu.name, input: tu.input });
 			}
 		}
+	}
+	// Live path: text/thinking streamed as id-less deltas; emit an anchor so the client
+	// can tag that bubble with the message uuid for deep-linking. (History tags inline.)
+	if (!includeText && messageId) {
+		if (hasText) out.push({ type: "message_anchor", sessionId, messageId, kind: "assistant" });
+		if (hasThinking) out.push({ type: "message_anchor", sessionId, messageId, kind: "thinking" });
 	}
 	return out;
 }
@@ -109,7 +129,7 @@ export function mapHistoryMessages(messages: HistoryMessage[], sessionId: string
 	for (const m of messages) {
 		const message = m.message as { content?: unknown } | undefined;
 		if (m.type === "assistant") {
-			out.push(...mapAssistant(message, sessionId, true));
+			out.push(...mapAssistant(message, sessionId, true, m.uuid));
 		} else if (m.type === "user") {
 			const content = message?.content;
 			const blocks = asBlocks(content);
@@ -117,7 +137,7 @@ export function mapHistoryMessages(messages: HistoryMessage[], sessionId: string
 				out.push(...mapUserResult(message, sessionId));
 			} else {
 				const text = typeof content === "string" ? content : textOf(blocks);
-				if (text.trim().length > 0) out.push({ type: "user_echo", sessionId, text });
+				if (text.trim().length > 0) out.push({ type: "user_echo", sessionId, text, ...(m.uuid ? { messageId: m.uuid } : {}) });
 			}
 		}
 	}

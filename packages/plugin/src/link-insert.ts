@@ -36,10 +36,10 @@ export function sessionLabel(s: SessionSummary): string {
 	return (s.title && s.title.trim()) || "New Claude session";
 }
 
-/** A markdown link to a conversation, e.g. `[My chat](obsidian://occ-chat?session=…)`. */
-export function conversationLinkFromParts(sessionId: string, title?: string): string {
+/** A markdown link to a conversation (optionally deep-linking a message by uuid). */
+export function conversationLinkFromParts(sessionId: string, title?: string, messageId?: string): string {
 	const label = (title && title.trim()) || "New Claude session";
-	return `[${label}](${occChatUri(sessionId)})`;
+	return `[${label}](${occChatUri(sessionId, messageId)})`;
 }
 
 /** A markdown link to a conversation, e.g. `[My chat](obsidian://occ-chat?session=…)`. */

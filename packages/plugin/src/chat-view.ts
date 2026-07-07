@@ -59,6 +59,10 @@ export class ChatView extends ItemView {
 	private pendingText: string | undefined;
 	/** session to open once the socket is ready (set by openSession before connect). */
 	private pendingOpenSession: string | undefined;
+	/** message a deep link wants to scroll to; paginate older until it's loaded. */
+	private pendingScrollTo: string | undefined;
+	/** true while a load_older requested by the deep-link resolver is in flight. */
+	private deepLinkLoading = false;
 	/** last text dispatched to the server; used to roll back if the server blocks it. */
 	private lastSentText: string | undefined;
 
@@ -690,8 +694,12 @@ export class ChatView extends ItemView {
 	 * Connection-aware: resumes immediately if the socket is up, else defers until the
 	 * `ready` frame arrives (a freshly-revealed view is still connecting).
 	 */
-	openSession(sessionId: string): void {
+	openSession(sessionId: string, messageId?: string): void {
 		this.pendingOpenSession = undefined;
+		// Target a specific message: resolved after the transcript loads by paging older
+		// until it appears (see tryResolveDeepLink). Cleared once found or exhausted.
+		this.pendingScrollTo = messageId;
+		this.deepLinkLoading = false;
 		if (this.client?.isConnected()) {
 			this.resumeSession(sessionId);
 		} else {
@@ -785,6 +793,7 @@ export class ChatView extends ItemView {
 		if (event.type === "history_page") {
 			// Capture pre-prepend metrics so render() can keep the viewport stable.
 			this.prependAdjust = { prevHeight: this.messagesEl.scrollHeight, prevTop: this.messagesEl.scrollTop };
+			this.deepLinkLoading = false; // this page arrived; the resolver may request the next
 		}
 		if (event.type === "sessions_list") {
 			this.sessionsLoading = false;
@@ -822,6 +831,47 @@ export class ChatView extends ItemView {
 		// Alert when a turn finishes while the app isn't visible.
 		if (event.type === "done" && document.hidden) new Notice("Claude finished responding", 5000);
 		this.render();
+		// Resolve a pending deep-link at stable points (after replay / each older page),
+		// where hasOlderHistory is accurate and the DOM reflects the latest transcript.
+		if (event.type === "session_status" || event.type === "history_page") this.tryResolveDeepLink();
+	}
+
+	/**
+	 * Scroll a deep link's target message into view, paging older until it's loaded.
+	 * The newest page loads first, so paging older brings in everything younger than the
+	 * target too. Gives up (with a notice) once history is exhausted without a match.
+	 */
+	private tryResolveDeepLink(): void {
+		const id = this.pendingScrollTo;
+		if (!id) return;
+		const el = this.messagesInnerEl.querySelector(`[data-msg-id="${CSS.escape(id)}"]`) as HTMLElement | null;
+		if (el) {
+			this.pendingScrollTo = undefined;
+			this.deepLinkLoading = false;
+			this.scrollToAndHighlight(el);
+			return;
+		}
+		if (this.state.hasOlderHistory && this.state.sessionId) {
+			if (this.deepLinkLoading) return; // a page is in flight; wait for history_page
+			this.deepLinkLoading = true;
+			this.client.loadOlder(this.state.sessionId);
+			return;
+		}
+		// History exhausted and still not found (e.g. a thinking bubble, absent from history).
+		this.pendingScrollTo = undefined;
+		this.deepLinkLoading = false;
+		new Notice("Linked message not found in this conversation.", 3000);
+	}
+
+	private scrollToAndHighlight(el: HTMLElement): void {
+		this.stickBottom = false; // don't let the bottom-pin fight the scroll-to-target
+		const go = (): void => el.scrollIntoView({ block: "center" });
+		go();
+		// Assistant markdown renders async and shifts layout; re-pin a couple of times.
+		window.setTimeout(go, 120);
+		window.setTimeout(go, 400);
+		el.addClass("occ-msg-highlight");
+		window.setTimeout(() => el.removeClass("occ-msg-highlight"), 2200);
 	}
 
 	private decide(toolUseId: string, allow: boolean): void {
@@ -1125,17 +1175,22 @@ export class ChatView extends ItemView {
 		for (const item of this.state.items) {
 			if (item.kind === "user") {
 				const bubble = this.messagesInnerEl.createDiv({ cls: "occ-bubble occ-user" });
+				if (item.id) bubble.setAttr("data-msg-id", item.id);
 				bubble.createDiv({ text: item.text });
-				this.addMsgCopy(bubble, item.text);
+				this.addMsgActions(bubble, item.text, item.id);
 			} else if (item.kind === "assistant") {
 				const bubble = this.messagesInnerEl.createDiv({ cls: "occ-bubble occ-assistant" });
-				this.addMsgCopy(bubble, item.text);
+				if (item.id) bubble.setAttr("data-msg-id", item.id);
+				this.addMsgActions(bubble, item.text, item.id);
 				const content = bubble.createDiv({ cls: "occ-bubble-content" });
 				// Obsidian's MarkdownRenderer adds its own code-block copy button and
 				// renders asynchronously; the ResizeObserver re-pins us to the bottom.
 				void MarkdownRenderer.render(this.app, item.text, content, "", this);
 			} else if (item.kind === "thinking") {
-				this.messagesInnerEl.createDiv({ cls: "occ-thinking", text: item.text });
+				const bubble = this.messagesInnerEl.createDiv({ cls: "occ-thinking" });
+				if (item.id) bubble.setAttr("data-msg-id", item.id);
+				bubble.createDiv({ cls: "occ-thinking-text", text: item.text });
+				this.addMsgActions(bubble, item.text, item.id);
 			} else {
 				this.renderTool(item.entry);
 			}
@@ -1186,15 +1241,42 @@ export class ChatView extends ItemView {
 		);
 	}
 
-	/** Add a small copy button to a message bubble (copies the whole message). */
-	private addMsgCopy(bubble: HTMLElement, text: string): void {
-		const btn = bubble.createEl("button", { cls: "occ-msg-copy" });
-		setIcon(btn, "copy");
-		btn.setAttr("aria-label", "Copy message");
+	/**
+	 * Per-message kebab: copy the message text, and copy an Obsidian deep link to this
+	 * exact message. `msgId` is the stable anchor (SDK message uuid / tool-use id); when
+	 * absent (a live-only bubble not yet in history, e.g. a just-sent user turn) the link
+	 * action falls back to a conversation-level link.
+	 */
+	private addMsgActions(bubble: HTMLElement, text: string, msgId?: string): void {
+		const btn = bubble.createEl("button", { cls: "occ-msg-actions" });
+		setIcon(btn, "more-vertical");
+		btn.setAttr("aria-label", "Message actions");
 		btn.addEventListener("click", (e) => {
 			e.stopPropagation();
-			this.copyToClipboard(text);
+			const menu = new Menu();
+			menu.addItem((i) => i.setTitle("Copy").setIcon("copy").onClick(() => this.copyToClipboard(text)));
+			menu.addItem((i) =>
+				i
+					.setTitle("Copy link to this message")
+					.setIcon("link")
+					.onClick(() => this.copyMessageLink(msgId))
+			);
+			menu.showAtMouseEvent(e);
 		});
+	}
+
+	/** Copy a deep link to a specific message (or the conversation, if not yet anchorable). */
+	private copyMessageLink(msgId?: string): void {
+		const sessionId = this.state.sessionId;
+		if (!sessionId) return;
+		if (!msgId) {
+			this.copyToClipboard(
+				conversationLinkFromParts(sessionId, this.currentSessionName()),
+				"Linked to the conversation (this message isn't anchorable yet — reload the session to link it exactly)"
+			);
+			return;
+		}
+		this.copyToClipboard(conversationLinkFromParts(sessionId, this.currentSessionName(), msgId), "Message link copied");
 	}
 
 
@@ -1202,6 +1284,10 @@ export class ChatView extends ItemView {
 		const expanded = this.expandedTools.has(entry.toolUseId);
 		const cls = entry.result?.isError ? "occ-tool occ-tool-error" : "occ-tool";
 		const el = this.messagesInnerEl.createDiv({ cls });
+		el.setAttr("data-msg-id", entry.toolUseId); // stable anchor for deep-linking
+		// Kebab: copy the tool's result/input, or a deep link to this tool call.
+		const copyText = entry.result?.content ?? (typeof entry.input === "object" && entry.input ? JSON.stringify(entry.input, null, 2) : "");
+		this.addMsgActions(el, copyText, entry.toolUseId);
 
 		// One-line, tappable summary.
 		const header = el.createDiv({ cls: "occ-tool-header" });

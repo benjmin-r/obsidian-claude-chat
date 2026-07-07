@@ -36,14 +36,15 @@ export default class ClaudeChatPlugin extends Plugin {
 		});
 		// Inline `/occ` autocomplete in the editor inserts the same link.
 		this.registerEditorSuggest(new ConversationSuggest(this));
-		// Route occ-chat:// links (from notes) to the chat view, opening the session.
-		this.registerObsidianProtocolHandler("occ-chat", (params) => void this.openSessionFromLink(params.session));
+		// Route occ-chat:// links (from notes) to the chat view, opening the session
+		// (and deep-linking to a specific message when `msg` is present).
+		this.registerObsidianProtocolHandler("occ-chat", (params) => void this.openSessionFromLink(params.session, params.msg));
 
 		this.addSettingTab(new ClaudeChatSettingTab(this.app, this));
 	}
 
-	/** Open the chat view and switch it to `sessionId` (from an occ-chat:// link). */
-	async openSessionFromLink(sessionId?: string): Promise<void> {
+	/** Open the chat view, switch it to `sessionId`, and (optionally) scroll to `messageId`. */
+	async openSessionFromLink(sessionId?: string, messageId?: string): Promise<void> {
 		if (!sessionId) {
 			new Notice("Claude Chat: link is missing a session id.");
 			return;
@@ -53,7 +54,7 @@ export default class ClaudeChatPlugin extends Plugin {
 			.getLeavesOfType(VIEW_TYPE_CLAUDE_CHAT)
 			.map((leaf) => leaf.view)
 			.find((v): v is ChatView => v instanceof ChatView);
-		if (view) view.openSession(sessionId);
+		if (view) view.openSession(sessionId, messageId);
 		else new Notice("Claude Chat: couldn't open the chat view.");
 	}
 

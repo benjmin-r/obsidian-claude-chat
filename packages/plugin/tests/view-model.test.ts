@@ -38,6 +38,42 @@ describe("view-model", () => {
 		expect(s.items.at(-1)).toEqual({ kind: "user", text: "old question" });
 	});
 
+	it("carries a deep-link anchor id from history events (user + assistant)", () => {
+		const s = reduce([
+			{ type: "user_echo", sessionId: SID, text: "q", messageId: "u-1" },
+			{ type: "assistant_text_delta", sessionId: SID, text: "a", messageId: "a-1" },
+		]);
+		expect(s.items).toEqual([
+			{ kind: "user", text: "q", id: "u-1" },
+			{ kind: "assistant", text: "a", id: "a-1" },
+		]);
+	});
+
+	it("message_anchor tags the streamed (id-less) bubble of its kind", () => {
+		const s = reduce([
+			{ type: "thinking_delta", sessionId: SID, text: "hmm" },
+			{ type: "assistant_text_delta", sessionId: SID, text: "Hello " },
+			{ type: "assistant_text_delta", sessionId: SID, text: "world" },
+			{ type: "message_anchor", sessionId: SID, messageId: "think-uuid", kind: "thinking" },
+			{ type: "message_anchor", sessionId: SID, messageId: "text-uuid", kind: "assistant" },
+		]);
+		expect(s.items).toEqual([
+			{ kind: "thinking", text: "hmm", id: "think-uuid" },
+			{ kind: "assistant", text: "Hello world", id: "text-uuid" },
+		]);
+	});
+
+	it("message_anchor only fills the nearest id-less bubble (doesn't overwrite)", () => {
+		const s = reduce([
+			{ type: "assistant_text_delta", sessionId: SID, text: "first", messageId: "already" },
+			{ type: "tool_use", sessionId: SID, toolUseId: "t1", name: "Read", input: {} },
+			{ type: "assistant_text_delta", sessionId: SID, text: "second" }, // id-less (live)
+			{ type: "message_anchor", sessionId: SID, messageId: "late", kind: "assistant" },
+		]);
+		expect(s.items[0]).toEqual({ kind: "assistant", text: "first", id: "already" });
+		expect(s.items.at(-1)).toEqual({ kind: "assistant", text: "second", id: "late" });
+	});
+
 	it("separates thinking from assistant bubbles", () => {
 		const s = reduce([
 			{ type: "thinking_delta", sessionId: SID, text: "hmm " },

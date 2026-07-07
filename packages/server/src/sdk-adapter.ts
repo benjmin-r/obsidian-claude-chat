@@ -79,7 +79,7 @@ export const listStored: ListStored = async (cwd) => {
 /** Load a persisted session's prior messages for transcript replay. */
 export const loadHistory: LoadHistory = async (cwd, sessionId) => {
 	const messages = await getSessionMessages(sessionId, { dir: cwd });
-	return messages.map((m) => ({ type: m.type, message: m.message }));
+	return messages.map((m) => ({ type: m.type, message: m.message, uuid: (m as { uuid?: string }).uuid }));
 };
 
 /** Set a persisted session's display title. */

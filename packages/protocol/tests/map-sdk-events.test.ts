@@ -158,6 +158,44 @@ describe("mapHistoryMessages", () => {
 			{ type: "user_echo", sessionId: "s", text: "x" },
 		]);
 	});
+
+	it("threads the message uuid inline as the deep-link anchor (history)", () => {
+		const msgs: HistoryMessage[] = [
+			{ type: "user", message: { content: "hello" }, uuid: "u-1" },
+			{ type: "assistant", message: { content: [{ type: "text", text: "hi!" }] }, uuid: "a-1" },
+		];
+		expect(mapHistoryMessages(msgs, "s")).toEqual([
+			{ type: "user_echo", sessionId: "s", text: "hello", messageId: "u-1" },
+			{ type: "assistant_text_delta", sessionId: "s", text: "hi!", messageId: "a-1" },
+		]);
+	});
+});
+
+describe("message anchors (live)", () => {
+	it("emits a message_anchor for a streamed assistant text message, carrying its uuid", () => {
+		const msg: SdkMessage = { type: "assistant", uuid: "a-uuid", message: { content: [{ type: "text", text: "streamed" }] } } as SdkMessage;
+		expect(mapSdkEvent(msg, SID)).toEqual([{ type: "message_anchor", sessionId: SID, messageId: "a-uuid", kind: "assistant" }]);
+	});
+
+	it("emits a thinking anchor for a streamed thinking message", () => {
+		const msg: SdkMessage = { type: "assistant", uuid: "t-uuid", message: { content: [{ type: "thinking", thinking: "…" }] } } as SdkMessage;
+		expect(mapSdkEvent(msg, SID)).toEqual([{ type: "message_anchor", sessionId: SID, messageId: "t-uuid", kind: "thinking" }]);
+	});
+
+	it("still emits tool_use alongside the anchor, and no anchor without a uuid", () => {
+		const withTool: SdkMessage = {
+			type: "assistant",
+			uuid: "a-2",
+			message: { content: [{ type: "text", text: "x" }, { type: "tool_use", id: "tt", name: "Read", input: {} }] },
+		} as SdkMessage;
+		expect(mapSdkEvent(withTool, SID)).toEqual([
+			{ type: "tool_use", sessionId: SID, toolUseId: "tt", name: "Read", input: {} },
+			{ type: "message_anchor", sessionId: SID, messageId: "a-2", kind: "assistant" },
+		]);
+		// No uuid → no anchor (unchanged behaviour).
+		const noUuid: SdkMessage = { type: "assistant", message: { content: [{ type: "text", text: "x" }] } };
+		expect(mapSdkEvent(noUuid, SID)).toEqual([]);
+	});
 });
 
 describe("extractTodos", () => {

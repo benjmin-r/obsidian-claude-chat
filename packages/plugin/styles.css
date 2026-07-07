@@ -272,33 +272,56 @@
 	-webkit-user-select: text;
 }
 
-/* Copy buttons (always faintly visible so they're tappable on touch). */
-.occ-bubble {
+/* Per-message kebab (always faintly visible so it's tappable on touch). */
+.occ-bubble,
+.occ-thinking,
+.occ-tool {
 	position: relative;
 }
 .occ-bubble-content {
 	padding-right: 22px;
 }
-.occ-msg-copy {
+.occ-msg-actions {
 	position: absolute;
 	top: 4px;
 	right: 4px;
 	padding: 2px 4px;
 	border-radius: 4px;
 	background-color: var(--background-primary);
-	opacity: 0.45;
+	opacity: 0.4;
 	cursor: pointer;
 	line-height: 1;
 }
-.occ-msg-copy:hover,
-.occ-msg-copy:active {
+.occ-msg-actions:hover,
+.occ-msg-actions:active {
 	opacity: 0.95;
+}
+.occ-tool > .occ-msg-actions {
+	background-color: transparent;
+}
+
+/* Deep-link target: a brief flash when scrolled to. */
+.occ-msg-highlight {
+	animation: occ-msg-flash 2.2s ease-out;
+	border-radius: 6px;
+}
+@keyframes occ-msg-flash {
+	0%,
+	40% {
+		box-shadow: 0 0 0 2px var(--interactive-accent);
+		background-color: var(--text-selection);
+	}
+	100% {
+		box-shadow: 0 0 0 2px transparent;
+		background-color: transparent;
+	}
 }
 
 .occ-thinking {
 	font-style: italic;
 	color: var(--text-muted);
 	font-size: 0.9em;
+	padding-right: 22px;
 }
 
 .occ-tool {

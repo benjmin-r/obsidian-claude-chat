@@ -64,11 +64,17 @@ export interface PongEvent {
 	type: "pong";
 }
 
-/** Incremental assistant text (streamed token deltas, never buffered). */
+/**
+ * Incremental assistant text (streamed token deltas, never buffered). `messageId`
+ * (the SDK message uuid) is set only on the single history-replay event, not on live
+ * deltas — for those the id arrives later via {@link MessageAnchorEvent}.
+ */
 export interface AssistantTextDeltaEvent {
 	type: "assistant_text_delta";
 	sessionId: string;
 	text: string;
+	/** stable per-message anchor for deep-linking; set on history replay only. */
+	messageId?: string;
 }
 
 /** Incremental extended-thinking text. */
@@ -76,6 +82,7 @@ export interface ThinkingDeltaEvent {
 	type: "thinking_delta";
 	sessionId: string;
 	text: string;
+	messageId?: string;
 }
 
 /** A historical user turn, replayed when resuming a past session. */
@@ -83,6 +90,21 @@ export interface UserEchoEvent {
 	type: "user_echo";
 	sessionId: string;
 	text: string;
+	/** stable per-message anchor (the SDK message uuid); present on history replay. */
+	messageId?: string;
+}
+
+/**
+ * Attaches a stable `messageId` (the SDK message uuid) to the most recent streamed
+ * bubble of `kind`. Emitted live when a full assistant message arrives, since its
+ * text/thinking already streamed as id-less deltas. Lets the client anchor live
+ * bubbles for deep-linking without re-rendering them.
+ */
+export interface MessageAnchorEvent {
+	type: "message_anchor";
+	sessionId: string;
+	messageId: string;
+	kind: "assistant" | "thinking";
 }
 
 /** A tool the agent invoked (non-TodoWrite). */
@@ -197,6 +219,7 @@ export type BridgeEvent =
 	| AssistantTextDeltaEvent
 	| ThinkingDeltaEvent
 	| UserEchoEvent
+	| MessageAnchorEvent
 	| ToolUseEvent
 	| ToolResultEvent
 	| TodoUpdateEvent
@@ -215,6 +238,7 @@ export type RenderEvent =
 	| AssistantTextDeltaEvent
 	| ThinkingDeltaEvent
 	| UserEchoEvent
+	| MessageAnchorEvent
 	| ToolUseEvent
 	| ToolResultEvent
 	| TodoUpdateEvent

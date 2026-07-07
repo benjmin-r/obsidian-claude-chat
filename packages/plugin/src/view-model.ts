@@ -26,9 +26,9 @@ export interface ToolEntry {
 }
 
 export type ChatItem =
-	| { kind: "user"; text: string }
-	| { kind: "assistant"; text: string }
-	| { kind: "thinking"; text: string }
+	| { kind: "user"; text: string; id?: string }
+	| { kind: "assistant"; text: string; id?: string }
+	| { kind: "thinking"; text: string; id?: string }
 	| { kind: "tool"; entry: ToolEntry };
 
 export interface ChatState {
@@ -81,16 +81,29 @@ export function appendUserMessage(state: ChatState, text: string): ChatState {
 	return { ...state, items: [...state.items, { kind: "user", text }], openKind: null };
 }
 
-function appendDelta(state: ChatState, kind: "assistant" | "thinking", text: string): ChatState {
+function appendDelta(state: ChatState, kind: "assistant" | "thinking", text: string, messageId?: string): ChatState {
 	if (state.openKind === kind) {
 		const items = state.items.slice();
 		const last = items[items.length - 1];
 		if (last && (last.kind === "assistant" || last.kind === "thinking")) {
-			items[items.length - 1] = { kind, text: last.text + text };
+			items[items.length - 1] = { kind, text: last.text + text, id: last.id ?? messageId };
 			return { ...state, items };
 		}
 	}
-	return { ...state, items: [...state.items, { kind, text }], openKind: kind };
+	return { ...state, items: [...state.items, { kind, text, id: messageId }], openKind: kind };
+}
+
+/** Tag the most recent id-less bubble of `kind` with a stable anchor id (live path). */
+function setLastBubbleId(state: ChatState, kind: "assistant" | "thinking", id: string): ChatState {
+	const items = state.items.slice();
+	for (let i = items.length - 1; i >= 0; i--) {
+		const it = items[i];
+		if (it && it.kind === kind && !it.id) {
+			items[i] = { ...it, id };
+			return { ...state, items };
+		}
+	}
+	return state;
 }
 
 export function applyEvent(state: ChatState, event: BridgeEvent): ChatState {
@@ -98,11 +111,13 @@ export function applyEvent(state: ChatState, event: BridgeEvent): ChatState {
 		case "ready":
 			return { ...state, connection: "connected", error: undefined };
 		case "assistant_text_delta":
-			return appendDelta(state, "assistant", event.text);
+			return appendDelta(state, "assistant", event.text, event.messageId);
 		case "thinking_delta":
-			return appendDelta(state, "thinking", event.text);
+			return appendDelta(state, "thinking", event.text, event.messageId);
+		case "message_anchor":
+			return setLastBubbleId(state, event.kind, event.messageId);
 		case "user_echo":
-			return { ...state, items: [...state.items, { kind: "user", text: event.text }], openKind: null };
+			return { ...state, items: [...state.items, { kind: "user", text: event.text, id: event.messageId }], openKind: null };
 		case "tool_use":
 			return {
 				...state,
