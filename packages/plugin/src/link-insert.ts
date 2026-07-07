@@ -37,8 +37,14 @@ export function sessionLabel(s: SessionSummary): string {
 }
 
 /** A markdown link to a conversation, e.g. `[My chat](obsidian://occ-chat?session=…)`. */
+export function conversationLinkFromParts(sessionId: string, title?: string): string {
+	const label = (title && title.trim()) || "New Claude session";
+	return `[${label}](${occChatUri(sessionId)})`;
+}
+
+/** A markdown link to a conversation, e.g. `[My chat](obsidian://occ-chat?session=…)`. */
 export function conversationLinkMarkdown(s: SessionSummary): string {
-	return `[${sessionLabel(s)}](${occChatUri(s.sessionId)})`;
+	return conversationLinkFromParts(s.sessionId, s.title);
 }
 
 /**

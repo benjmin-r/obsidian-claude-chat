@@ -1,5 +1,11 @@
 import type { SessionSummary } from "@occ/protocol";
-import { conversationLinkMarkdown, matchOccTrigger, occChatUri, sessionLabel } from "../src/link-insert";
+import {
+	conversationLinkFromParts,
+	conversationLinkMarkdown,
+	matchOccTrigger,
+	occChatUri,
+	sessionLabel,
+} from "../src/link-insert";
 
 const session = (over: Partial<SessionSummary> = {}): SessionSummary => ({
 	sessionId: "s1",
@@ -33,6 +39,16 @@ describe("conversationLinkMarkdown", () => {
 		expect(conversationLinkMarkdown(session({ sessionId: "xyz", title: "Notes review" }))).toBe(
 			"[Notes review](obsidian://occ-chat?session=xyz)"
 		);
+	});
+});
+
+describe("conversationLinkFromParts", () => {
+	it("builds the same link from an id + title", () => {
+		expect(conversationLinkFromParts("xyz", "Notes review")).toBe("[Notes review](obsidian://occ-chat?session=xyz)");
+	});
+	it("falls back to a default label when untitled/blank", () => {
+		expect(conversationLinkFromParts("xyz", "  ")).toBe("[New Claude session](obsidian://occ-chat?session=xyz)");
+		expect(conversationLinkFromParts("xyz")).toBe("[New Claude session](obsidian://occ-chat?session=xyz)");
 	});
 });
 

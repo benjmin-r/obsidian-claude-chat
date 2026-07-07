@@ -4,7 +4,7 @@ import type ClaudeChatPlugin from "./main";
 import { BridgeClient, type WsLike } from "./bridge-client";
 import { DebugLog } from "./debug-log";
 import { FileSuggest } from "./file-suggest";
-import { conversationLinkMarkdown } from "./link-insert";
+import { conversationLinkFromParts } from "./link-insert";
 import { MODEL_OPTIONS } from "./settings-types";
 import {
 	applyEvent,
@@ -68,6 +68,7 @@ export class ChatView extends ItemView {
 	private modelLabelEl!: HTMLElement;
 	private modeBtn!: HTMLButtonElement;
 	private reloadBtn!: HTMLButtonElement;
+	private actionsBtn!: HTMLButtonElement;
 	private selectedModel: string;
 	/** desired permission mode for new sessions; applied once a session starts. */
 	private desiredMode: PermissionMode;
@@ -98,7 +99,7 @@ export class ChatView extends ItemView {
 	private lastScrollTop = 0;
 	/** the current session's title, and the derived tab header text. */
 	private currentTitle: string | undefined;
-	private tabTitle = "Claude Chat";
+	private tabTitle = "New Session";
 
 	// Connection-debug panel state (gated behind the debugConnectionPanel setting).
 	private dlog?: DebugLog;
@@ -131,10 +132,20 @@ export class ChatView extends ItemView {
 		return this.tabTitle;
 	}
 
-	/** Reflect the current session title in the tab header (prefixed so it's readable). */
+	/**
+	 * The loaded session's name for the view/tab header: its title, or "New Session"
+	 * for a new/empty/untitled session. Falls back to the picker list's title when
+	 * `currentTitle` hasn't been set on this open path (e.g. attach-on-reconnect).
+	 */
+	private currentSessionName(): string {
+		if (!this.state.sessionId) return "New Session";
+		const stored = this.state.sessions.find((s) => s.sessionId === this.state.sessionId)?.title?.trim();
+		return this.currentTitle?.trim() || stored || "New Session";
+	}
+
+	/** Reflect the loaded session's name in the view header + tab title. */
 	private updateTabTitle(): void {
-		const t = this.currentTitle?.trim();
-		const display = t ? `CC: ${t}` : "Claude Chat";
+		const display = this.currentSessionName();
 		if (display === this.tabTitle) return;
 		this.tabTitle = display;
 		(this.leaf as unknown as { updateHeader?: () => void }).updateHeader?.();
@@ -282,6 +293,12 @@ export class ChatView extends ItemView {
 		setIcon(this.modeBtn, "shield");
 		this.modeBtn.setAttr("aria-label", "Permission mode");
 		this.modeBtn.addEventListener("click", (e) => this.openModeMenu(e));
+
+		// Kebab that mirrors the loaded session's picker actions (copy link, close, rename…).
+		this.actionsBtn = toolbar.createEl("button", { cls: "occ-tool-btn" });
+		setIcon(this.actionsBtn, "more-vertical");
+		this.actionsBtn.setAttr("aria-label", "Current session actions");
+		this.actionsBtn.addEventListener("click", (e) => this.openCurrentSessionActions(e));
 
 		// Right-aligned status group: cost, connection, activity.
 		const status = toolbar.createDiv({ cls: "occ-status" });
@@ -813,6 +830,7 @@ export class ChatView extends ItemView {
 	// -- rendering -----------------------------------------------------------
 
 	private render(): void {
+		this.updateTabTitle(); // keep the header/tab in sync with the loaded session (cheap; no-ops if unchanged)
 		this.renderStatus();
 		this.renderPicker();
 		this.renderTodos();
@@ -893,28 +911,27 @@ export class ChatView extends ItemView {
 			const more = item.createEl("button", { cls: "occ-picker-more" });
 			setIcon(more, "more-vertical");
 			more.setAttr("aria-label", "Session actions");
-			const linkMarkdown = conversationLinkMarkdown(s);
 			more.addEventListener("click", (e) => {
 				e.stopPropagation();
-				this.openSessionActions(e, s.sessionId, named || "", label, linkMarkdown);
+				this.openSessionActions(e, s.sessionId, named || "", label);
 			});
 		}
 	}
 
-	private openSessionActions(
-		evt: MouseEvent,
-		sessionId: string,
-		currentTitle: string,
-		label: string,
-		linkMarkdown: string
-	): void {
+	/** Toolbar kebab: open the loaded session's action menu (mirrors its picker kebab). */
+	private openCurrentSessionActions(evt: MouseEvent): void {
+		if (!this.state.sessionId) return;
+		this.openSessionActions(evt, this.state.sessionId, this.currentTitle ?? "", this.currentSessionName());
+	}
+
+	private openSessionActions(evt: MouseEvent, sessionId: string, currentTitle: string, label: string): void {
 		const menu = new Menu();
 		// Copy a note-ready link WITHOUT touching the session (no close/switch).
 		menu.addItem((i) =>
 			i
 				.setTitle("Copy Obsidian link")
 				.setIcon("link")
-				.onClick(() => this.copyToClipboard(linkMarkdown, "Conversation link copied"))
+				.onClick(() => this.copyToClipboard(conversationLinkFromParts(sessionId, currentTitle), "Conversation link copied"))
 		);
 		menu.addItem((i) =>
 			i
@@ -1025,8 +1042,9 @@ export class ChatView extends ItemView {
 		this.activityIconEl.className = `occ-status-icon occ-act-${cls}`;
 		this.activityIconEl.setAttr("aria-label", label);
 
-		// Nothing to reload until a session is attached.
+		// Nothing to reload / act on until a session is attached.
 		this.reloadBtn.disabled = !this.state.sessionId;
+		this.actionsBtn.disabled = !this.state.sessionId;
 
 		// The Send button doubles as Stop while a turn is running; locked when read-only.
 		this.sendBtn.setText(working ? "Stop" : "Send");
