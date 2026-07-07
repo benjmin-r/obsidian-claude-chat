@@ -148,7 +148,11 @@ export class ChatView extends ItemView {
 		const display = this.currentSessionName();
 		if (display === this.tabTitle) return;
 		this.tabTitle = display;
+		// Refreshes the TAB header (getDisplayText).
 		(this.leaf as unknown as { updateHeader?: () => void }).updateHeader?.();
+		// updateHeader doesn't refresh the INLINE view-header title in this Obsidian
+		// version, so set that element directly (main-area leaves only; sidebars omit it).
+		(this.containerEl.querySelector(".view-header-title") as HTMLElement | null)?.setText(display);
 	}
 
 	getIcon(): string {
