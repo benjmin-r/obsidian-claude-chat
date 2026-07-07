@@ -13,6 +13,7 @@ import path from "node:path";
 import { deleteSession, getSessionMessages, listSessions, query, renameSession } from "@anthropic-ai/claude-agent-sdk";
 import type { SdkMessage } from "@occ/protocol";
 import { classifyHolders, isDescendant, parseEntry, type RegistryEntry } from "./external-activity";
+import { sweepOrphanedAgents } from "./orphan-sweep";
 import type {
 	DeleteStored,
 	DetectExternalActivity,
@@ -111,6 +112,39 @@ function parentOf(pid: number): number | undefined {
 	} catch {
 		return undefined;
 	}
+}
+
+/**
+ * Kill Agent-SDK subprocesses orphaned by a previous server run (hard crash). Call
+ * once at startup, before any session spawns. Best-effort; returns the pids swept.
+ */
+export function sweepOrphanedAgentsFromProc(): number[] {
+	return sweepOrphanedAgents({
+		ownPid: process.pid,
+		listPids: () => {
+			try {
+				return fs.readdirSync("/proc").filter((d) => /^\d+$/.test(d)).map(Number);
+			} catch {
+				return []; // no /proc (non-Linux) → nothing to sweep
+			}
+		},
+		cmdline: (pid) => {
+			try {
+				return fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").replace(/\0/g, " ").trim();
+			} catch {
+				return undefined; // process gone / unreadable
+			}
+		},
+		parentOf,
+		kill: (pid) => {
+			try {
+				process.kill(pid, "SIGTERM");
+				return true;
+			} catch {
+				return false; // already gone / not permitted
+			}
+		},
+	});
 }
 
 /**

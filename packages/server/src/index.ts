@@ -4,12 +4,29 @@
  */
 
 import { loadConfig } from "./config";
-import { deleteStored, detectExternalActivity, listStored, loadHistory, renameStored, runQuery } from "./sdk-adapter";
+import {
+	deleteStored,
+	detectExternalActivity,
+	listStored,
+	loadHistory,
+	renameStored,
+	runQuery,
+	sweepOrphanedAgentsFromProc,
+} from "./sdk-adapter";
 import { SessionManager } from "./session-manager";
 import { startTransport } from "./ws-transport";
 
 function main(): void {
 	const config = loadConfig();
+
+	// Reclaim any Agent-SDK subprocesses orphaned by a previous run (a hard crash skips
+	// node's exit-time teardown; KillMode=process leaves them behind). We have no children
+	// yet, so every match is a genuine orphan.
+	const swept = sweepOrphanedAgentsFromProc();
+	if (swept.length > 0) {
+		// eslint-disable-next-line no-console
+		console.log(`[occ] swept ${swept.length} orphaned agent subprocess(es) from a previous run: [${swept.join(",")}]`);
+	}
 
 	let counter = 0;
 	const manager = new SessionManager(
