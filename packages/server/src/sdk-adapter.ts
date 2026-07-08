@@ -28,6 +28,8 @@ import type {
 interface SdkQuery extends AsyncGenerator<unknown, void> {
 	interrupt(): Promise<void>;
 	setPermissionMode(mode: string): Promise<void>;
+	/** null keeps the default thinking budget; 'summarized' surfaces the reasoning text. */
+	setMaxThinkingTokens(max: number | null, display?: "summarized" | "omitted" | null): Promise<void>;
 	/** Forcefully ends the query and terminates the CLI subprocess (per SDK docs). */
 	close(): void;
 }
@@ -45,6 +47,11 @@ export const runQuery: RunQuery = (prompt, options) => {
 			...(options.resume ? { resume: options.resume } : {}),
 		} as never,
 	}) as unknown as SdkQuery;
+
+	// Opus redacts raw extended-thinking (the thinking block streams empty); request
+	// SUMMARIZED display so the model's reasoning is surfaced as text the plugin can show
+	// as thinking bubbles. Fire-and-forget before the first turn; best-effort per model.
+	void q.setMaxThinkingTokens(null, "summarized").catch(() => undefined);
 
 	// Wrap (not mutate) the SDK object so `dispose()` can close the generator — the
 	// ONLY thing that terminates the CLI subprocess. `interrupt()` cancels the turn

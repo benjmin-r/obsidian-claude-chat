@@ -101,6 +101,12 @@ function mapAssistant(
 			}
 		} else if (block.type === "thinking") {
 			hasThinking = true;
+			// History replay: live streams thinking as deltas, but a resumed session has
+			// none — emit the (summarized) thinking text so past reasoning shows too.
+			const thinking = (block as { thinking?: unknown }).thinking;
+			if (includeText && typeof thinking === "string" && thinking.length > 0) {
+				out.push({ type: "thinking_delta", sessionId, text: thinking, ...(messageId ? { messageId } : {}) });
+			}
 		} else if (block.type === "tool_use") {
 			const tu = block as SdkToolUseBlock;
 			if (tu.name === TODO_TOOL) {

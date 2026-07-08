@@ -159,6 +159,22 @@ describe("mapHistoryMessages", () => {
 		]);
 	});
 
+	it("emits (summarized) thinking on history replay, anchored by uuid", () => {
+		const msgs: HistoryMessage[] = [
+			{ type: "assistant", message: { content: [{ type: "thinking", thinking: "reasoning summary" }] }, uuid: "th-1" },
+			{ type: "assistant", message: { content: [{ type: "text", text: "answer" }] }, uuid: "tx-1" },
+		];
+		expect(mapHistoryMessages(msgs, "s")).toEqual([
+			{ type: "thinking_delta", sessionId: "s", text: "reasoning summary", messageId: "th-1" },
+			{ type: "assistant_text_delta", sessionId: "s", text: "answer", messageId: "tx-1" },
+		]);
+	});
+
+	it("drops an empty (redacted) thinking block on history replay", () => {
+		const msgs: HistoryMessage[] = [{ type: "assistant", message: { content: [{ type: "thinking", thinking: "" }] }, uuid: "th-0" }];
+		expect(mapHistoryMessages(msgs, "s")).toEqual([]);
+	});
+
 	it("threads the message uuid inline as the deep-link anchor (history)", () => {
 		const msgs: HistoryMessage[] = [
 			{ type: "user", message: { content: "hello" }, uuid: "u-1" },
