@@ -700,12 +700,22 @@ export class ChatView extends ItemView {
 		// until it appears (see tryResolveDeepLink). Cleared once found or exhausted.
 		this.pendingScrollTo = messageId;
 		this.deepLinkLoading = false;
+		// A link carries no title, so clear the previously-loaded session's name (else the
+		// header/tab keep it); resumeDeepLinked then fetches the list to fill in the real one.
+		this.currentTitle = undefined;
 		if (this.client?.isConnected()) {
-			this.resumeSession(sessionId);
+			this.resumeDeepLinked(sessionId);
 		} else {
 			this.pendingOpenSession = sessionId;
 			this.client?.connect(); // idempotent if already connecting; onEvent(ready) flushes it
 		}
+	}
+
+	/** Resume a deep-linked session, then fetch the session list so its stored title
+	 *  populates the header/tab (the resume itself doesn't carry a title). */
+	private resumeDeepLinked(sessionId: string): void {
+		this.resumeSession(sessionId);
+		this.client.listSessions(); // sessions_list handler sets currentTitle for the current session
 	}
 
 	/**
@@ -788,7 +798,7 @@ export class ChatView extends ItemView {
 		if (event.type === "ready" && this.pendingOpenSession) {
 			const sessionId = this.pendingOpenSession;
 			this.pendingOpenSession = undefined;
-			this.resumeSession(sessionId);
+			this.resumeDeepLinked(sessionId);
 		}
 		if (event.type === "history_page") {
 			// Capture pre-prepend metrics so render() can keep the viewport stable.
