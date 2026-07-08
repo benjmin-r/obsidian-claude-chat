@@ -6,6 +6,37 @@ Each entry is ≤200 words (longer when a hard-won investigation is worth preser
 
 ---
 
+## TDL-20260708-009: Show thinking — request summarized reasoning (Opus redacts raw)
+
+**Date:** 2026-07-08
+**Status:** Implemented
+
+**Context:** Thinking bubbles never appeared. Probing Opus 4.8 showed the assistant
+emits a thinking block, but its `thinking` **text is empty** and the stream carries only
+`signature_delta` (the encrypted signature), no `thinking_delta` — i.e. **raw extended
+thinking is redacted** by the API. So there was literally nothing to render, live or in
+history.
+
+**Finding:** `setMaxThinkingTokens(null, 'summarized')` on the Query flips the session's
+thinking display to **summarized** — the API then emits `thinking_delta` text and populates
+the block (`"I'm calculating that 17 times 23 equals 391."`). `null` keeps the default
+budget. The query `Options` have `thinking`/`effort` but no display toggle, and inline
+`settings: { showThinkingSummaries: true }` did **not** work in testing; the runtime control
+is the proven lever.
+
+**Decision:** `sdk-adapter.runQuery` fire-and-forgets `setMaxThinkingTokens(null,
+'summarized')` per session (best-effort; harmless for models without thinking). Also emit
+thinking on history replay: `mapAssistant` (includeText) now pushes a `thinking_delta` from
+a non-empty thinking block (uuid-anchored), so resumed sessions show past reasoning and
+thinking bubbles become deep-linkable. Empty/redacted blocks (pre-change sessions) are
+skipped. Server/protocol only — the plugin already renders `thinking_delta`.
+
+**Consequences:** thinking is ON for everyone (summaries cost some extra output tokens —
+fine on the subscription). No user toggle yet; add a setting (plugin→server plumbing) if
+one is wanted. Verified live via the real SessionActor path (a turn broadcasts
+`thinking_delta`). **Files:** `packages/server/src/sdk-adapter.ts`,
+`packages/protocol/src/map-sdk-events.ts` + tests.
+
 ## TDL-20260707-008: Message-level deep links (anchor on the SDK message uuid)
 
 **Date:** 2026-07-07
