@@ -12,8 +12,10 @@ WorkingDirectory=/home/USER/vaults/VAULT
 # HOME must point at the account whose ~/.claude holds the subscription session,
 # so the SDK authenticates against the Claude subscription.
 Environment=HOME=/home/USER
-# Ensure node, claude and tailscale are resolvable.
-Environment=PATH=/home/USER/.local/share/npm/bin:/usr/local/bin:/usr/bin:/bin
+# Ensure node, claude, tailscale AND the user's own tools (~/bin, ~/.local/bin —
+# e.g. vsearch, which is `uv run`-shebanged and thus also needs uv from
+# ~/.local/bin) are resolvable inside SDK sessions, which inherit this PATH.
+Environment=PATH=/home/USER/.local/bin:/home/USER/bin:/home/USER/.local/share/npm/bin:/usr/local/bin:/usr/bin:/bin
 
 # Token + bind address + (optional) port/model live here, NOT in this unit file.
 # Example contents (chmod 600):
