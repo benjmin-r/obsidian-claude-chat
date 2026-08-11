@@ -321,7 +321,13 @@
 	font-style: italic;
 	color: var(--text-muted);
 	font-size: 0.9em;
-	padding-right: 22px;
+	background-color: var(--background-primary-alt);
+	border-left: 3px solid var(--text-faint);
+	padding: 4px 8px;
+	border-radius: 4px;
+}
+.occ-thinking-text {
+	white-space: pre-wrap;
 }
 
 .occ-tool {
@@ -337,13 +343,15 @@
 	border-left-color: var(--text-error);
 }
 
-.occ-tool-header {
+.occ-tool-header,
+.occ-thinking-header {
 	display: flex;
 	align-items: center;
 	gap: 6px;
 	cursor: pointer;
 }
-.occ-tool-chevron {
+.occ-tool-chevron,
+.occ-thinking-chevron {
 	flex: 0 0 auto;
 	display: inline-flex;
 	opacity: 0.7;
@@ -352,7 +360,11 @@
 	flex: 0 0 auto;
 	font-weight: var(--font-semibold, 600);
 }
-.occ-tool-preview {
+.occ-thinking-label {
+	flex: 0 0 auto;
+}
+.occ-tool-preview,
+.occ-thinking-preview {
 	flex: 1;
 	min-width: 0;
 	overflow: hidden;
@@ -366,7 +378,8 @@
 	color: var(--text-error);
 	font-size: 0.85em;
 }
-.occ-tool-body {
+.occ-tool-body,
+.occ-thinking-body {
 	margin-top: 6px;
 }
 .occ-tool-body .occ-tool-input {

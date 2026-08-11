@@ -96,6 +96,8 @@ export class ChatView extends ItemView {
 	private fileSuggest?: FileSuggest;
 	/** tool blocks the user has expanded, kept across re-renders. */
 	private readonly expandedTools = new Set<string>();
+	/** thinking blocks the user has expanded, kept across re-renders (keyed by item.id, "" until anchored). */
+	private readonly expandedThinking = new Set<string>();
 	/** set when an older-history page was just prepended, to keep the viewport stable. */
 	private prependAdjust: { prevHeight: number; prevTop: number } | undefined;
 	/** true while we should keep pinned to the bottom (re-scroll as async markdown grows). */
@@ -1197,10 +1199,7 @@ export class ChatView extends ItemView {
 				// renders asynchronously; the ResizeObserver re-pins us to the bottom.
 				void MarkdownRenderer.render(this.app, item.text, content, "", this);
 			} else if (item.kind === "thinking") {
-				const bubble = this.messagesInnerEl.createDiv({ cls: "occ-thinking" });
-				if (item.id) bubble.setAttr("data-msg-id", item.id);
-				bubble.createDiv({ cls: "occ-thinking-text", text: item.text });
-				this.addMsgActions(bubble, item.text, item.id);
+				this.renderThinking(item.text, item.id);
 			} else {
 				this.renderTool(item.entry);
 			}
@@ -1289,6 +1288,36 @@ export class ChatView extends ItemView {
 		this.copyToClipboard(conversationLinkFromParts(sessionId, this.currentSessionName(), msgId), "Message link copied");
 	}
 
+
+	/** Collapsed-by-default thinking block, tappable to expand — mirrors renderTool's bubble. */
+	private renderThinking(text: string, id?: string): void {
+		const key = id ?? "";
+		const expanded = this.expandedThinking.has(key);
+		const el = this.messagesInnerEl.createDiv({ cls: "occ-thinking" });
+		if (id) el.setAttr("data-msg-id", id);
+		this.addMsgActions(el, text, id);
+
+		// One-line, tappable summary.
+		const header = el.createDiv({ cls: "occ-thinking-header" });
+		const chevron = header.createSpan({ cls: "occ-thinking-chevron" });
+		setIcon(chevron, expanded ? "chevron-down" : "chevron-right");
+		header.createSpan({ cls: "occ-thinking-label", text: "💭 Thinking" });
+		const preview = text.replace(/\s+/g, " ").trim();
+		if (preview) header.createSpan({ cls: "occ-thinking-preview", text: preview });
+
+		// Full detail, hidden until expanded.
+		const body = el.createDiv({ cls: "occ-thinking-body" });
+		body.toggleClass("occ-hidden", !expanded);
+		body.createDiv({ cls: "occ-thinking-text", text });
+
+		header.addEventListener("click", () => {
+			const open = !this.expandedThinking.has(key);
+			if (open) this.expandedThinking.add(key);
+			else this.expandedThinking.delete(key);
+			body.toggleClass("occ-hidden", !open);
+			setIcon(chevron, open ? "chevron-down" : "chevron-right");
+		});
+	}
 
 	private renderTool(entry: ToolEntry): void {
 		const expanded = this.expandedTools.has(entry.toolUseId);
