@@ -29,7 +29,8 @@ export type ChatItem =
 	| { kind: "user"; text: string; id?: string }
 	| { kind: "assistant"; text: string; id?: string }
 	| { kind: "thinking"; text: string; id?: string }
-	| { kind: "tool"; entry: ToolEntry };
+	| { kind: "tool"; entry: ToolEntry }
+	| { kind: "error"; text: string };
 
 export interface ChatState {
 	connection: ConnectionState;
@@ -136,7 +137,11 @@ export function applyEvent(state: ChatState, event: BridgeEvent): ChatState {
 		case "done":
 			return { ...state, openKind: null, costUsd: event.costUsd ?? state.costUsd };
 		case "error":
-			return { ...state, openKind: null, error: event.message };
+			// A transient toast alone (chat-view.ts) isn't enough: it fires once, live, and
+			// is gone in 5s, so a client reattaching later (e.g. after a stalled-turn
+			// recovery — see SessionManager.reapStalledTurns) never sees any trace of it.
+			// Persist it as a real transcript item so it survives reload/replay too.
+			return { ...state, openKind: null, error: event.message, items: [...state.items, { kind: "error", text: event.message }] };
 		case "session_status":
 			return {
 				...state,

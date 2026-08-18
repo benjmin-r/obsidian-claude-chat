@@ -6,7 +6,7 @@
  * still hold the provisional id keep resolving to the same actor.
  */
 
-import { mapHistoryMessages, type SessionSummary } from "@occ/protocol";
+import { mapHistoryMessages, type PermissionMode, type SessionSummary } from "@occ/protocol";
 import { SessionActor, type SessionActorDeps } from "./session-actor";
 import type { DeleteStored, DetectExternalActivity, ListStored, LoadHistory, RenameStored } from "./ports";
 
@@ -44,6 +44,13 @@ export class SessionManager {
 	private readonly actors = new Set<SessionActor>();
 	/** unsubscribe for each actor's internal id-aliasing listener (cleared on drop). */
 	private readonly aliasUnsub = new Map<SessionActor, () => void>();
+	/**
+	 * Last-known permission mode per canonical session id, kept across actor
+	 * teardown (idle reap / live-session-cap eviction / close+resume / reload).
+	 * A SessionActor only holds its mode in memory, so without this every
+	 * reconstruction silently fell back to "default".
+	 */
+	private readonly lastPermissionMode = new Map<string, PermissionMode>();
 
 	private readonly detect: DetectExternalActivity;
 	private readonly maxLiveSessions: number;
@@ -74,6 +81,47 @@ export class SessionManager {
 				this.dropActor(actor);
 			} else if (actor.status === "awaiting_permission" && age > permissionMaxIdleMs) {
 				actor.autoDenyPending("Auto-denied: permission request expired without a response.");
+			}
+		}
+	}
+
+	/**
+	 * Recover turns stuck "working" with zero events for too long — a wedged SDK
+	 * subprocess that never completes a tool call and never errors on its own (see
+	 * the transcript-level root cause in memory occ-bug-stuck-working-no-watchdog).
+	 * Unlike `reapIdle`, this checks EVERY actor, including attached ones — the
+	 * whole point is unsticking a session the user is actively staring at.
+	 *
+	 * A wedged subprocess may not respond to `interrupt()` either (it depends on
+	 * the same stuck event loop), so recovery goes straight to `reloadSession`:
+	 * that disposes the actor via `close()`, which the SDK docs guarantee
+	 * terminates the child regardless of its internal state, then reconstructs a
+	 * fresh actor from the on-disk transcript. `abandonStalledTurn` runs first, on
+	 * the dying actor, so any attached client is unstuck immediately rather than
+	 * waiting on the (possibly slow) reload. The SAME notice is then re-seeded
+	 * onto the reconstructed actor's buffer (`seedNotice`) — its own buffer is
+	 * discarded on reconstruction and reseeded purely from the on-disk transcript,
+	 * which never contained the notice, so without this a client reattaching
+	 * later (rather than watching live) would see the transcript trail off
+	 * silently with no indication a turn failed.
+	 */
+	reapStalledTurns(stallMs: number): void {
+		const now = this.deps.now();
+		for (const actor of [...this.actors]) {
+			if (actor.status !== "working") continue;
+			if (now - actor.updatedAt <= stallMs) continue;
+			console.warn(
+				`[occ] stalled turn (no activity for ${Math.round((now - actor.updatedAt) / 1000)}s) — recovering session=${actor.id}`
+			);
+			const message = "This response stalled with no activity and was cancelled. Send a new message to retry.";
+			actor.abandonStalledTurn(message);
+			// A hang before the SDK ever reports a real session id has nothing on disk to
+			// reconstruct from; leave that rare case as a dead, idle, provisional actor.
+			if (actor.sdkSessionId) {
+				const id = actor.id;
+				void this.reloadSession(id)
+					.then((fresh) => fresh.seedNotice({ type: "error", sessionId: fresh.id, message }))
+					.catch(() => undefined);
 			}
 		}
 	}
@@ -122,6 +170,7 @@ export class SessionManager {
 			model: model ?? this.config.defaultModel,
 			resume: sdkSessionId,
 			bufferLimit: this.config.bufferLimit,
+			initialPermissionMode: this.lastPermissionMode.get(sdkSessionId),
 		});
 		this.register(actor, sdkSessionId);
 		return actor;
@@ -141,6 +190,15 @@ export class SessionManager {
 		// "permission rejected on reload" bug). The live actor is already current, so
 		// just return it — the re-attach re-surfaces the pending request via subscribe().
 		if (existing?.hasPendingPermissions) return existing;
+		// Same reasoning for an actively-working actor: killing it mid-turn (e.g. an
+		// impatient re-open from the picker) tears the on-disk transcript off mid tool
+		// call/generation. Resuming a transcript with a dangling unfinished turn then
+		// hits flaky auto-continuation behavior baked into the CLI itself (a canned
+		// "No response requested." reply, or nothing at all — see memory
+		// occ-bug-stuck-working-no-watchdog). Just re-attach to the live, progressing
+		// actor instead; reapStalledTurns is the one legitimate caller that wants a
+		// working actor torn down, and it always flips status to idle first.
+		if (existing?.status === "working") return existing;
 		if (existing) this.dropActor(existing);
 		return this.resumeWithHistory(sessionId);
 	}
@@ -171,6 +229,7 @@ export class SessionManager {
 			model: this.config.defaultModel,
 			resume: sessionId,
 			bufferLimit: this.config.bufferLimit,
+			initialPermissionMode: this.lastPermissionMode.get(sessionId),
 		});
 		this.register(actor, sessionId);
 		try {
@@ -306,6 +365,7 @@ export class SessionManager {
 			() => {
 				const sid = actor.sdkSessionId;
 				if (sid && this.index.get(sid) !== actor) this.index.set(sid, actor);
+				this.lastPermissionMode.set(actor.id, actor.permissionMode);
 			},
 			{ internal: true }
 		);

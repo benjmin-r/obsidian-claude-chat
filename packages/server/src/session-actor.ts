@@ -50,6 +50,13 @@ export interface SessionActorOptions {
 	resume?: string;
 	/** max transcript events retained for replay-on-attach. */
 	bufferLimit?: number;
+	/**
+	 * Seed the permission mode instead of defaulting to "default". Used when
+	 * reconstructing an actor (resume/reload/reap) so a user's prior choice for
+	 * this session survives the underlying subprocess being recycled — the mode
+	 * otherwise lives only on the actor instance and is lost on every teardown.
+	 */
+	initialPermissionMode?: PermissionMode;
 }
 
 type Listener = (event: BridgeEvent) => void;
@@ -71,7 +78,7 @@ export class SessionActor {
 	private started = false;
 	private disposed = false;
 	private _status: SessionStatus = "idle";
-	private _permissionMode: PermissionMode = "default";
+	private _permissionMode: PermissionMode;
 	private _external: ExternalActivity = { severity: "none" };
 	private _sdkSessionId: string | undefined;
 	private _updatedAt: number;
@@ -87,6 +94,7 @@ export class SessionActor {
 	) {
 		this.bufferLimit = opts.bufferLimit ?? DEFAULT_BUFFER_LIMIT;
 		this._sdkSessionId = opts.resume;
+		this._permissionMode = opts.initialPermissionMode ?? "default";
 		this._updatedAt = deps.now();
 	}
 
@@ -105,6 +113,10 @@ export class SessionActor {
 
 	get status(): SessionStatus {
 		return this._status;
+	}
+
+	get permissionMode(): PermissionMode {
+		return this._permissionMode;
 	}
 
 	/**
@@ -269,6 +281,36 @@ export class SessionActor {
 		this.pendingPermissions.clear();
 		this.pendingRequest = undefined;
 		this.setStatus("working");
+	}
+
+	/**
+	 * Recover a turn that produced zero events for too long — a wedged SDK
+	 * subprocess that never completes a tool call and never errors on its own
+	 * (see SessionManager.reapStalledTurns). Surfaces a clear error and falls the
+	 * actor back to idle immediately, on THIS actor object, so any attached client
+	 * unsticks right away regardless of whether the underlying subprocess ever
+	 * responds. The caller is responsible for actually killing/reconstructing the
+	 * subprocess — a wedged `interrupt()` RPC can itself hang, since it depends on
+	 * the same stuck event loop.
+	 */
+	abandonStalledTurn(message: string): void {
+		if (this._status !== "working") return;
+		this.record({ type: "error", sessionId: this.id, message });
+		this.setStatus("idle");
+	}
+
+	/**
+	 * Inject an event straight into the replay buffer (and broadcast it live, if
+	 * anyone happens to be attached at this exact moment). Used to carry a
+	 * recovery notice ACROSS actor reconstruction: `abandonStalledTurn` records
+	 * its error on the dying actor, but `reloadSession` then discards that actor
+	 * (and its buffer) and reseeds a fresh one purely from the on-disk transcript
+	 * — which never contained the synthetic notice. Without re-seeding it here, a
+	 * client that reattaches later (rather than watching live) sees the
+	 * transcript trail off silently, with no indication a turn failed.
+	 */
+	seedNotice(event: RenderEvent): void {
+		this.record(event);
 	}
 
 	/**

@@ -293,6 +293,116 @@ describe("SessionManager", () => {
 		expect(decision).toBeInstanceOf(Promise); // silence unused-var lint
 	});
 
+	it("reloadSession does NOT drop an actor that is actively working (an impatient re-open must not tear the transcript mid-turn)", async () => {
+		let loads = 0;
+		const { fake, manager } = makeManager({
+			loadHistory: async () => {
+				loads += 1;
+				return [];
+			},
+		});
+		const actor = await manager.resumeWithHistory("sess-1");
+		expect(loads).toBe(1);
+		actor.enqueue("continue"); // status -> working; no result/error emitted, still in flight
+		expect(actor.status).toBe("working");
+
+		const reloaded = await manager.reloadSession("sess-1");
+
+		expect(reloaded).toBe(actor); // same live actor — not torn down
+		expect(loads).toBe(1); // no fresh disk read
+		expect(fake.disposed()).toBe(false); // subprocess left running, turn left intact
+	});
+
+	it("a chosen permission mode survives actor teardown and reconstruction", async () => {
+		const { fake, manager } = makeManager();
+		const actor = await manager.resumeWithHistory("sess-1");
+		actor.enqueue("hi"); // starts the query so setPermissionMode has a handle to call
+		await actor.setPermissionMode("acceptEdits");
+		expect(fake.modeSet()).toBe("acceptEdits");
+		fake.emit({ type: "result", subtype: "success", is_error: false }); // turn completes
+		await flush();
+		expect(actor.status).toBe("idle"); // reloadSession now leaves a working actor alone
+
+		const reloaded = await manager.reloadSession("sess-1");
+
+		expect(reloaded).not.toBe(actor); // fresh actor instance
+		expect(reloaded.permissionMode).toBe("acceptEdits"); // NOT reset to "default"
+		reloaded.enqueue("continue"); // starts the fresh actor's query
+		expect(fake.options()?.permissionMode).toBe("acceptEdits"); // and re-applied at spawn
+	});
+
+	describe("reapStalledTurns", () => {
+		it("cancels a turn stuck with zero events and reconstructs the actor fresh", async () => {
+			let now = 0;
+			let loads = 0;
+			const { manager } = makeManager({
+				now: () => now,
+				loadHistory: async () => {
+					loads += 1;
+					return [];
+				},
+			});
+			const actor = await manager.resumeWithHistory("sess-1");
+			expect(loads).toBe(1);
+			const events: BridgeEvent[] = [];
+			actor.subscribe((e) => events.push(e));
+
+			now = 1;
+			actor.enqueue("hi"); // status -> working, updatedAt = 1
+
+			now = 1 + 60_001; // over a minute of total silence
+			manager.reapStalledTurns(60_000);
+			await flush();
+
+			expect(actor.status).toBe("idle"); // unstuck on the SAME (dying) actor object
+			expect(events.some((e) => e.type === "error")).toBe(true);
+			expect(loads).toBe(2); // fresh actor reconstructed from disk
+			expect(manager.get("sess-1")).not.toBe(actor); // swapped for a healthy instance
+		});
+
+		it("re-seeds the stall notice onto the reconstructed actor so a later reattach still sees it", async () => {
+			let now = 0;
+			const { manager } = makeManager({ now: () => now });
+			const actor = await manager.resumeWithHistory("sess-1");
+			now = 1;
+			actor.enqueue("hi");
+			now = 1 + 60_001;
+			manager.reapStalledTurns(60_000);
+			await flush();
+
+			const fresh = manager.get("sess-1");
+			expect(fresh).toBeDefined();
+			expect(fresh).not.toBe(actor);
+
+			// A client reattaching well after recovery (not watching live) still gets the
+			// notice via replay — it must be IN THE BUFFER, not just a live broadcast that
+			// only reached whoever happened to be attached at the moment of recovery.
+			const replay: BridgeEvent[] = [];
+			fresh?.subscribe((e) => replay.push(e));
+			expect(replay.some((e) => e.type === "error")).toBe(true);
+		});
+
+		it("leaves a turn alone while it's still under the threshold", () => {
+			let now = 0;
+			const { manager } = makeManager({ now: () => now });
+			const actor = manager.create();
+			now = 1;
+			actor.enqueue("hi");
+			now = 1 + 30_000; // well under a 60s threshold
+			manager.reapStalledTurns(60_000);
+			expect(actor.status).toBe("working");
+		});
+
+		it("ignores idle and awaiting-permission actors (reapIdle's job, not this one's)", () => {
+			let now = 0;
+			const { manager } = makeManager({ now: () => now });
+			const idle = manager.create(); // never enqueued a turn: stays idle
+			now = 1 + 60_001;
+			manager.reapStalledTurns(60_000);
+			expect(idle.status).toBe("idle");
+		});
+	});
+
 	it("listSummaries merges active + stored, dedupes, sorts newest first", async () => {
 		const { manager } = makeManager({
 			listStored: async () => [

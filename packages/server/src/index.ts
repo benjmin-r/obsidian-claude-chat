@@ -57,6 +57,15 @@ function main(): void {
 	const reaper = setInterval(() => manager.reapIdle(5 * 60_000, 60 * 60_000), 60_000);
 	reaper.unref();
 
+	// Recover turns wedged with zero events for too long (a hung SDK subprocess that
+	// never completes a tool call and never errors on its own). 5 min, not 1 — a
+	// single slow tool call (e.g. an API-backed CLI like readwise) can legitimately
+	// run 60-90s+ with no intermediate events, and a 1-minute threshold was killing
+	// those false-positive (see memory occ-bug-stuck-working-no-watchdog). Checked
+	// twice as often as the threshold so detection lands close to the mark.
+	const stallReaper = setInterval(() => manager.reapStalledTurns(5 * 60_000), 60_000);
+	stallReaper.unref();
+
 	// eslint-disable-next-line no-console
 	console.log(`[occ] listening on ws://${config.host}:${config.port} (cwd=${config.vaultCwd}, model=${config.defaultModel})`);
 

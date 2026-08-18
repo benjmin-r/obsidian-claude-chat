@@ -732,6 +732,12 @@ export class ChatView extends ItemView {
 		this.stickBottom = true; // switching in should always land at the bottom
 		this.currentTitle = title ?? this.currentTitle;
 		this.updateTabTitle();
+		// Every resume drops and reconstructs the actor server-side, which used to reset
+		// its permission mode to "default" (server memory of the last mode is in-process
+		// only and doesn't survive a server restart — see occ-bug-permission-mode-reset).
+		// Re-assert our configured default here too, the same way startNewSession does,
+		// so the setting applies consistently regardless of server-side state.
+		this.applyDesiredMode = true;
 		// Clear the current transcript; the resumed session's history replays in.
 		this.state = { ...initialState(this.selectedModel), connection: this.state.connection };
 		this.client.resumeSession(sessionId, /* reload */ true);
@@ -1200,6 +1206,23 @@ export class ChatView extends ItemView {
 				void MarkdownRenderer.render(this.app, item.text, content, "", this);
 			} else if (item.kind === "thinking") {
 				this.renderThinking(item.text, item.id);
+			} else if (item.kind === "error") {
+				const bubble = this.messagesInnerEl.createDiv({ cls: "occ-bubble occ-error" });
+				bubble.setAttr("role", "button");
+				bubble.setAttr("tabindex", "0");
+				bubble.createDiv({ text: item.text });
+				bubble.createDiv({ cls: "occ-error-retry", text: "Tap to retry" });
+				const retry = () => {
+					if (!this.state.sessionId || this.state.status !== "idle") return;
+					this.dispatchSend("Please continue.");
+				};
+				bubble.addEventListener("click", retry);
+				bubble.addEventListener("keydown", (evt) => {
+					if (evt.key === "Enter" || evt.key === " ") {
+						evt.preventDefault();
+						retry();
+					}
+				});
 			} else {
 				this.renderTool(item.entry);
 			}

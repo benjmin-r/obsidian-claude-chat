@@ -157,6 +157,9 @@ describe("view-model", () => {
 		]);
 		const e = applyEvent(initialState("m"), { type: "error", message: "bad" });
 		expect(e.error).toBe("bad");
+		// A toast (chat-view.ts) alone is missed on reattach — must persist as a
+		// transcript item too, so it survives reload/replay (see reapStalledTurns).
+		expect(e.items).toEqual([{ kind: "error", text: "bad" }]);
 	});
 
 	it("history_page prepends older messages (oldest above) and tracks hasMore", () => {
