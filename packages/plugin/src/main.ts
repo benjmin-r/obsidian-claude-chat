@@ -28,6 +28,20 @@ export default class ClaudeChatPlugin extends Plugin {
 			callback: () => void this.openInTab(),
 		});
 
+		// Expand/collapse all tool-call and thinking activity in the transcript — mirrors
+		// the ctrl-o transcript toggle in the Claude Code TUI.
+		this.addCommand({
+			id: "toggle-transcript-detail",
+			name: "Toggle tool call / thinking detail (expand or collapse all)",
+			hotkeys: [{ modifiers: ["Mod"], key: "o" }],
+			checkCallback: (checking) => {
+				const view = this.app.workspace.getActiveViewOfType(ChatView);
+				if (!view) return false;
+				if (!checking) view.toggleTranscriptExpanded();
+				return true;
+			},
+		});
+
 		// Link to conversations from notes: `[title](obsidian://occ-chat?session=<id>)`.
 		this.addCommand({
 			id: "insert-conversation-link",

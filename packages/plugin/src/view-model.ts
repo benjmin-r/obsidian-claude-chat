@@ -32,6 +32,59 @@ export type ChatItem =
 	| { kind: "tool"; entry: ToolEntry }
 	| { kind: "error"; text: string };
 
+type ActivityItem = Extract<ChatItem, { kind: "thinking" | "tool" }>;
+
+/** A run of consecutive tool/thinking items, collapsed to one row in the transcript. */
+export interface ActivityGroup {
+	kind: "activity";
+	items: ActivityItem[];
+	/** stable-ish key for tracking this group's manual expand/collapse state. */
+	key: string;
+}
+
+export type DisplayItem = Extract<ChatItem, { kind: "user" | "assistant" | "error" }> | ActivityGroup;
+
+/**
+ * Fold consecutive tool/thinking items into `ActivityGroup`s so the transcript can
+ * render one collapsible row per run of "agent activity" instead of one row per
+ * step — long tool/thinking chains otherwise flood the view between two visible
+ * messages. User/assistant/error items pass through unchanged.
+ */
+export function groupActivity(items: ChatItem[]): DisplayItem[] {
+	const out: DisplayItem[] = [];
+	let run: ActivityItem[] = [];
+	const flush = () => {
+		if (run.length === 0) return;
+		const first = run[0]!;
+		const key = first.kind === "tool" ? first.entry.toolUseId : (first.id ?? `activity-${out.length}`);
+		out.push({ kind: "activity", items: run, key });
+		run = [];
+	};
+	for (const item of items) {
+		if (item.kind === "thinking" || item.kind === "tool") run.push(item);
+		else {
+			flush();
+			out.push(item);
+		}
+	}
+	flush();
+	return out;
+}
+
+/** One-line label for a collapsed activity group; `isLive` shows the in-flight step. */
+export function summarizeActivity(items: ActivityItem[], isLive: boolean): string {
+	const toolCount = items.filter((i) => i.kind === "tool").length;
+	const thinkingCount = items.length - toolCount;
+	const parts: string[] = [];
+	if (thinkingCount) parts.push(`${thinkingCount} thinking`);
+	if (toolCount) parts.push(`${toolCount} tool${toolCount === 1 ? "" : "s"}`);
+	const summary = parts.join(", ") || "activity";
+	if (!isLive) return summary;
+	const last = items[items.length - 1]!;
+	const action = last.kind === "tool" ? last.entry.name : "Thinking";
+	return `${action}… (${summary})`;
+}
+
 export interface ChatState {
 	connection: ConnectionState;
 	sessionId?: string;

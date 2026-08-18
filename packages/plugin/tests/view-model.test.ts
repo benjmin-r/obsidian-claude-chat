@@ -3,8 +3,11 @@ import {
 	appendUserMessage,
 	applyEvent,
 	clearPermission,
+	groupActivity,
 	initialState,
 	setConnection,
+	summarizeActivity,
+	type ChatItem,
 	type ChatState,
 } from "../src/view-model";
 
@@ -249,5 +252,61 @@ describe("view-model", () => {
 		expect(s.sessions).toHaveLength(1);
 		expect(setConnection(s, "connecting").connection).toBe("connecting");
 		expect(appendUserMessage(s, "hi").items.at(-1)).toEqual({ kind: "user", text: "hi" });
+	});
+
+	describe("groupActivity", () => {
+		const thinking = (id: string): ChatItem => ({ kind: "thinking", text: "hmm", id });
+		const tool = (toolUseId: string): ChatItem => ({ kind: "tool", entry: { toolUseId, name: "Read", input: {} } });
+		const user = (text: string): ChatItem => ({ kind: "user", text });
+
+		it("leaves user/assistant/error items untouched", () => {
+			const items: ChatItem[] = [user("hi"), { kind: "assistant", text: "hey" }, { kind: "error", text: "oops" }];
+			expect(groupActivity(items)).toEqual(items);
+		});
+
+		it("folds a run of consecutive tool/thinking items into one activity group", () => {
+			const items = [user("go"), thinking("t1"), tool("u1"), tool("u2"), user("done")];
+			const out = groupActivity(items);
+			expect(out).toEqual([
+				user("go"),
+				{ kind: "activity", items: [thinking("t1"), tool("u1"), tool("u2")], key: "t1" },
+				user("done"),
+			]);
+		});
+
+		it("keys a tool-first group by its toolUseId", () => {
+			const out = groupActivity([tool("u1"), thinking("t1")]);
+			expect(out).toEqual([{ kind: "activity", items: [tool("u1"), thinking("t1")], key: "u1" }]);
+		});
+
+		it("splits separate runs into separate groups", () => {
+			const out = groupActivity([tool("u1"), user("mid"), tool("u2")]);
+			expect(out).toEqual([
+				{ kind: "activity", items: [tool("u1")], key: "u1" },
+				user("mid"),
+				{ kind: "activity", items: [tool("u2")], key: "u2" },
+			]);
+		});
+	});
+
+	describe("summarizeActivity", () => {
+		const thinking: ChatItem & { kind: "thinking" } = { kind: "thinking", text: "hmm" };
+		const tool = (name: string): ChatItem & { kind: "tool" } => ({
+			kind: "tool",
+			entry: { toolUseId: "u", name, input: {} },
+		});
+
+		it("summarizes counts by kind when not live", () => {
+			expect(summarizeActivity([thinking, tool("Read"), tool("Edit")], false)).toBe("1 thinking, 2 tools");
+		});
+
+		it("singularizes a single tool", () => {
+			expect(summarizeActivity([tool("Read")], false)).toBe("1 tool");
+		});
+
+		it("shows the in-flight step and running count when live", () => {
+			expect(summarizeActivity([tool("Read"), tool("Bash")], true)).toBe("Bash… (2 tools)");
+			expect(summarizeActivity([tool("Read"), thinking], true)).toBe("Thinking… (1 thinking, 1 tool)");
+		});
 	});
 });

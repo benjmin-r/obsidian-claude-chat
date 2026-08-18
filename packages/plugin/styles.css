@@ -409,6 +409,58 @@
 	color: var(--text-muted);
 }
 
+/* Collapsed row for a run of consecutive tool/thinking items (see groupActivity in
+   view-model.ts) — keeps long tool-call chains from flooding the transcript. Deliberately
+   understated (small text, tight padding, faint) so it reads as a status line, not a
+   message; expanded, its body holds normal .occ-tool / .occ-thinking bubbles at their
+   usual size. */
+.occ-activity-header {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	cursor: pointer;
+	padding: 1px 6px;
+	color: var(--text-faint);
+	font-size: 0.75em;
+	line-height: 1.4;
+}
+.occ-activity-header:hover {
+	color: var(--text-muted);
+}
+.occ-activity-header svg {
+	width: 11px !important;
+	height: 11px !important;
+}
+.occ-activity-chevron {
+	flex: 0 0 auto;
+	display: inline-flex;
+	opacity: 0.7;
+}
+.occ-activity-live {
+	flex: 0 0 auto;
+	display: inline-flex;
+}
+.occ-activity-live svg {
+	animation: occ-spin 1.2s linear infinite;
+}
+.occ-activity-label {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.occ-activity-body {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin: 2px 0 2px 8px;
+}
+
+.occ-tool-btn.is-active {
+	color: var(--text-accent);
+}
+
 .occ-todos {
 	list-style: none;
 	margin: 0;

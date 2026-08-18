@@ -10,8 +10,11 @@ import {
 	applyEvent,
 	appendUserMessage,
 	clearPermission,
+	groupActivity,
 	initialState,
 	setConnection,
+	summarizeActivity,
+	type ActivityGroup,
 	type ChatState,
 	type ConnectionState,
 	type ToolEntry,
@@ -98,6 +101,11 @@ export class ChatView extends ItemView {
 	private readonly expandedTools = new Set<string>();
 	/** thinking blocks the user has expanded, kept across re-renders (keyed by item.id, "" until anchored). */
 	private readonly expandedThinking = new Set<string>();
+	/** activity groups (runs of tool/thinking items) the user has individually expanded, keyed by ActivityGroup.key. */
+	private readonly expandedGroups = new Set<string>();
+	/** global "expand all" toggle for activity groups — mirrors Claude Code TUI's ctrl-o transcript toggle. */
+	private transcriptExpanded = false;
+	private transcriptToggleBtn!: HTMLButtonElement;
 	/** set when an older-history page was just prepended, to keep the viewport stable. */
 	private prependAdjust: { prevHeight: number; prevTop: number } | undefined;
 	/** true while we should keep pinned to the bottom (re-scroll as async markdown grows). */
@@ -303,6 +311,11 @@ export class ChatView extends ItemView {
 		setIcon(this.modeBtn, "shield");
 		this.modeBtn.setAttr("aria-label", "Permission mode");
 		this.modeBtn.addEventListener("click", (e) => this.openModeMenu(e));
+
+		// Expand/collapse all tool-call and thinking activity groups at once — mirrors the
+		// ctrl-o transcript toggle in the Claude Code TUI.
+		this.transcriptToggleBtn = toolbar.createEl("button", { cls: "occ-tool-btn" });
+		this.transcriptToggleBtn.addEventListener("click", () => this.toggleTranscriptExpanded());
 
 		// Kebab that mirrors the loaded session's picker actions (copy link, close, rename…).
 		this.actionsBtn = toolbar.createEl("button", { cls: "occ-tool-btn" });
@@ -1118,6 +1131,13 @@ export class ChatView extends ItemView {
 		this.reloadBtn.disabled = !this.state.sessionId;
 		this.actionsBtn.disabled = !this.state.sessionId;
 
+		setIcon(this.transcriptToggleBtn, this.transcriptExpanded ? "eye-off" : "eye");
+		this.transcriptToggleBtn.setAttr(
+			"aria-label",
+			this.transcriptExpanded ? "Collapse all tool/thinking activity" : "Expand all tool/thinking activity"
+		);
+		this.transcriptToggleBtn.classList.toggle("is-active", this.transcriptExpanded);
+
 		// The Send button doubles as Stop while a turn is running; locked when read-only.
 		this.sendBtn.setText(working ? "Stop" : "Send");
 		this.sendBtn.disabled = readOnly && !working;
@@ -1190,7 +1210,8 @@ export class ChatView extends ItemView {
 				if (this.state.sessionId) this.client.loadOlder(this.state.sessionId);
 			});
 		}
-		for (const item of this.state.items) {
+		const displayItems = groupActivity(this.state.items);
+		displayItems.forEach((item, idx) => {
 			if (item.kind === "user") {
 				const bubble = this.messagesInnerEl.createDiv({ cls: "occ-bubble occ-user" });
 				if (item.id) bubble.setAttr("data-msg-id", item.id);
@@ -1204,8 +1225,6 @@ export class ChatView extends ItemView {
 				// Obsidian's MarkdownRenderer adds its own code-block copy button and
 				// renders asynchronously; the ResizeObserver re-pins us to the bottom.
 				void MarkdownRenderer.render(this.app, item.text, content, "", this);
-			} else if (item.kind === "thinking") {
-				this.renderThinking(item.text, item.id);
 			} else if (item.kind === "error") {
 				const bubble = this.messagesInnerEl.createDiv({ cls: "occ-bubble occ-error" });
 				bubble.setAttr("role", "button");
@@ -1224,9 +1243,10 @@ export class ChatView extends ItemView {
 					}
 				});
 			} else {
-				this.renderTool(item.entry);
+				const isLive = idx === displayItems.length - 1 && this.state.status === "working";
+				this.renderActivityGroup(item, isLive);
 			}
-		}
+		});
 		if (this.state.items.length === 0) {
 			this.messagesInnerEl.createDiv({
 				cls: "occ-empty",
@@ -1312,11 +1332,51 @@ export class ChatView extends ItemView {
 	}
 
 
+	/** Flip the global expand-all toggle for tool-call/thinking activity groups (ctrl-o). */
+	toggleTranscriptExpanded(): void {
+		this.transcriptExpanded = !this.transcriptExpanded;
+		this.render();
+	}
+
+	/**
+	 * A run of consecutive tool/thinking items, collapsed by default to one tappable summary
+	 * row (`isLive` just swaps in a spinner and the in-flight step's name) so long tool/
+	 * thinking chains don't flood the transcript between two visible messages. Expanded —
+	 * per-group click, or the transcriptExpanded global toggle — it falls through to the
+	 * normal per-item bubbles below, each still individually collapsible for its own
+	 * input/output detail.
+	 */
+	private renderActivityGroup(group: ActivityGroup, isLive: boolean): void {
+		const expanded = this.transcriptExpanded || this.expandedGroups.has(group.key);
+		const el = this.messagesInnerEl.createDiv({ cls: "occ-activity" });
+
+		const header = el.createDiv({ cls: "occ-activity-header" });
+		if (isLive) setIcon(header.createSpan({ cls: "occ-activity-live" }), "loader");
+		const chevron = header.createSpan({ cls: "occ-activity-chevron" });
+		setIcon(chevron, expanded ? "chevron-down" : "chevron-right");
+		header.createSpan({ cls: "occ-activity-label", text: summarizeActivity(group.items, isLive) });
+
+		const body = el.createDiv({ cls: "occ-activity-body" });
+		body.toggleClass("occ-hidden", !expanded);
+		for (const item of group.items) {
+			if (item.kind === "thinking") this.renderThinking(body, item.text, item.id);
+			else this.renderTool(body, item.entry);
+		}
+
+		header.addEventListener("click", () => {
+			const open = !this.expandedGroups.has(group.key);
+			if (open) this.expandedGroups.add(group.key);
+			else this.expandedGroups.delete(group.key);
+			body.toggleClass("occ-hidden", !(open || this.transcriptExpanded));
+			setIcon(chevron, open || this.transcriptExpanded ? "chevron-down" : "chevron-right");
+		});
+	}
+
 	/** Collapsed-by-default thinking block, tappable to expand — mirrors renderTool's bubble. */
-	private renderThinking(text: string, id?: string): void {
+	private renderThinking(parent: HTMLElement, text: string, id?: string): void {
 		const key = id ?? "";
 		const expanded = this.expandedThinking.has(key);
-		const el = this.messagesInnerEl.createDiv({ cls: "occ-thinking" });
+		const el = parent.createDiv({ cls: "occ-thinking" });
 		if (id) el.setAttr("data-msg-id", id);
 		this.addMsgActions(el, text, id);
 
@@ -1342,10 +1402,10 @@ export class ChatView extends ItemView {
 		});
 	}
 
-	private renderTool(entry: ToolEntry): void {
+	private renderTool(parent: HTMLElement, entry: ToolEntry): void {
 		const expanded = this.expandedTools.has(entry.toolUseId);
 		const cls = entry.result?.isError ? "occ-tool occ-tool-error" : "occ-tool";
-		const el = this.messagesInnerEl.createDiv({ cls });
+		const el = parent.createDiv({ cls });
 		el.setAttr("data-msg-id", entry.toolUseId); // stable anchor for deep-linking
 		// Kebab: copy the tool's result/input, or a deep link to this tool call.
 		const copyText = entry.result?.content ?? (typeof entry.input === "object" && entry.input ? JSON.stringify(entry.input, null, 2) : "");
