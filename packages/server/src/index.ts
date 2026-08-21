@@ -5,6 +5,7 @@
 
 import { loadConfig } from "./config";
 import {
+	archiveStored,
 	deleteStored,
 	detectExternalActivity,
 	listStored,
@@ -38,6 +39,7 @@ function main(): void {
 			loadHistory,
 			renameStored,
 			deleteStored,
+			archiveStored,
 			detectExternalActivity,
 		},
 		{ cwd: config.vaultCwd, defaultModel: config.defaultModel, bufferLimit: config.bufferLimit }

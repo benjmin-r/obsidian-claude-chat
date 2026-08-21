@@ -1,6 +1,6 @@
 import type { BridgeEvent } from "@occ/protocol";
 import { SessionManager } from "../src/session-manager";
-import type { DeleteStored, DetectExternalActivity, ListStored, LoadHistory, RenameStored } from "../src/ports";
+import type { ArchiveStored, DeleteStored, DetectExternalActivity, ListStored, LoadHistory, RenameStored } from "../src/ports";
 import { flush, makeFakeQuery } from "./fake-query";
 
 function makeManager(
@@ -9,6 +9,7 @@ function makeManager(
 		loadHistory?: LoadHistory;
 		renameStored?: RenameStored;
 		deleteStored?: DeleteStored;
+		archiveStored?: ArchiveStored;
 		detectExternalActivity?: DetectExternalActivity;
 		now?: () => number;
 		maxLiveSessions?: number;
@@ -25,6 +26,7 @@ function makeManager(
 			loadHistory: opts.loadHistory ?? (async () => []),
 			renameStored: opts.renameStored ?? (async () => undefined),
 			deleteStored: opts.deleteStored ?? (async () => undefined),
+			archiveStored: opts.archiveStored ?? (async () => undefined),
 			detectExternalActivity: opts.detectExternalActivity,
 		},
 		{ cwd: "/v", defaultModel: "claude-opus-4-8", maxLiveSessions: opts.maxLiveSessions }
@@ -80,7 +82,7 @@ describe("SessionManager", () => {
 
 		it("resumes and registers a session that exists only on disk", async () => {
 			const { manager } = makeManager({
-				listStored: async () => [{ sessionId: "old-1", title: "Old", updatedAt: 5 }],
+				listStored: async () => [{ sessionId: "old-1", title: "Old", updatedAt: 5, archived: false }],
 			});
 			const actor = await manager.attachOrResume("old-1");
 			expect(actor?.id).toBe("old-1");
@@ -406,8 +408,8 @@ describe("SessionManager", () => {
 	it("listSummaries merges active + stored, dedupes, sorts newest first", async () => {
 		const { manager } = makeManager({
 			listStored: async () => [
-				{ sessionId: "stored-old", title: "Old", updatedAt: 1 },
-				{ sessionId: "stored-new", title: "New", updatedAt: 100 },
+				{ sessionId: "stored-old", title: "Old", updatedAt: 1, archived: false },
+				{ sessionId: "stored-new", title: "New", updatedAt: 100, archived: false },
 			],
 		});
 		const active = manager.create();
@@ -418,7 +420,7 @@ describe("SessionManager", () => {
 
 	it("listSummaries gives an active (resumed) session its stored title, not a UUID", async () => {
 		const { manager } = makeManager({
-			listStored: async () => [{ sessionId: "resumed-1", title: "Renamed!", updatedAt: 50 }],
+			listStored: async () => [{ sessionId: "resumed-1", title: "Renamed!", updatedAt: 50, archived: false }],
 		});
 		await manager.resumeWithHistory("resumed-1"); // now active; actor has no title of its own
 		const list = await manager.listSummaries();
@@ -460,6 +462,38 @@ describe("SessionManager", () => {
 		});
 		await manager.renameSession("sess-1", "New Title");
 		expect(calls).toEqual([["/v", "sess-1", "New Title"]]);
+	});
+
+	it("archiveSession delegates to the store with the configured cwd", async () => {
+		const calls: Array<[string, string, boolean]> = [];
+		const { manager } = makeManager({
+			archiveStored: async (cwd, id, archived) => {
+				calls.push([cwd, id, archived]);
+			},
+		});
+		await manager.archiveSession("sess-1", true);
+		await manager.archiveSession("sess-1", false);
+		expect(calls).toEqual([
+			["/v", "sess-1", true],
+			["/v", "sess-1", false],
+		]);
+	});
+
+	it("listSummaries surfaces the archived flag for active and stored-only sessions", async () => {
+		const { manager } = makeManager({
+			listStored: async () => [
+				{ sessionId: "resumed-1", title: "Live", updatedAt: 50, archived: true },
+				{ sessionId: "stored-only-1", title: "Stored", updatedAt: 10, archived: true },
+			],
+		});
+		await manager.resumeWithHistory("resumed-1"); // now active; still borrows archived from the store
+		const list = await manager.listSummaries();
+		expect(list).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ sessionId: "resumed-1", archived: true }),
+				expect.objectContaining({ sessionId: "stored-only-1", archived: true }),
+			])
+		);
 	});
 
 	it("deleteSession removes it from the store and drops the live actor", async () => {
@@ -519,6 +553,7 @@ describe("SessionManager", () => {
 				loadHistory: async () => [],
 				renameStored: async () => undefined,
 				deleteStored: async () => undefined,
+				archiveStored: async () => undefined,
 			},
 			{ cwd: "/v", defaultModel: "m" }
 		);

@@ -127,7 +127,8 @@ class SessionCache {
 		const now = Date.now();
 		if (this.cache && now - this.cache.at < this.ttlMs) return this.cache.sessions;
 		try {
-			const sessions = await fetchSessions(this.host.settings.serverUrl, this.host.settings.token);
+			const all = await fetchSessions(this.host.settings.serverUrl, this.host.settings.token);
+			const sessions = all.filter((s) => !s.archived);
 			this.cache = { at: now, sessions };
 			return sessions;
 		} catch {

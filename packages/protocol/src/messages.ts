@@ -47,6 +47,8 @@ export interface SessionSummary {
 	messageCount?: number;
 	/** true when another client currently holds the writer role. */
 	hasWriter?: boolean;
+	/** true if the session is archived (hidden from the default picker view). */
+	archived?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -307,6 +309,13 @@ export interface DeleteSessionMessage {
 	sessionId: string;
 }
 
+/** Set a session's archived flag. */
+export interface ArchiveSessionMessage {
+	type: "archive_session";
+	sessionId: string;
+	archived: boolean;
+}
+
 /** Detach from a session and release the server-side actor (clean CLI hand-off). */
 export interface CloseSessionMessage {
 	type: "close_session";
@@ -346,6 +355,7 @@ export type ClientMessage =
 	| ResumeSessionMessage
 	| RenameSessionMessage
 	| DeleteSessionMessage
+	| ArchiveSessionMessage
 	| CloseSessionMessage
 	| SetPermissionModeMessage
 	| LoadOlderMessage

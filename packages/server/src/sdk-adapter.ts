@@ -10,11 +10,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { deleteSession, getSessionMessages, listSessions, query, renameSession } from "@anthropic-ai/claude-agent-sdk";
+import { deleteSession, getSessionMessages, listSessions, query, renameSession, tagSession } from "@anthropic-ai/claude-agent-sdk";
 import type { SdkMessage } from "@occ/protocol";
 import { classifyHolders, isDescendant, parseEntry, type RegistryEntry } from "./external-activity";
 import { sweepOrphanedAgents } from "./orphan-sweep";
 import type {
+	ArchiveStored,
 	DeleteStored,
 	DetectExternalActivity,
 	ListStored,
@@ -80,6 +81,7 @@ export const listStored: ListStored = async (cwd) => {
 		sessionId: s.sessionId,
 		title: (s.customTitle || s.summary || s.firstPrompt || s.sessionId).trim(),
 		updatedAt: s.lastModified,
+		archived: s.tag === "archived",
 	}));
 };
 
@@ -94,6 +96,10 @@ export const renameStored: RenameStored = (cwd, sessionId, title) => renameSessi
 
 /** Permanently delete a persisted session from the store. */
 export const deleteStored: DeleteStored = (cwd, sessionId) => deleteSession(sessionId, { dir: cwd });
+
+/** Set a persisted session's archived flag. */
+export const archiveStored: ArchiveStored = (cwd, sessionId, archived) =>
+	tagSession(sessionId, archived ? "archived" : null, { dir: cwd });
 
 const SESSIONS_DIR = path.join(os.homedir(), ".claude", "sessions");
 

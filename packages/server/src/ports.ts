@@ -67,6 +67,7 @@ export interface StoredSessionInfo {
 	sessionId: string;
 	title: string;
 	updatedAt: number;
+	archived: boolean;
 }
 
 /** Enumerate persisted sessions for a project dir (real = SDK `listSessions`). */
@@ -80,6 +81,9 @@ export type RenameStored = (cwd: string, sessionId: string, title: string) => Pr
 
 /** Permanently delete a persisted session (real = SDK `deleteSession`). */
 export type DeleteStored = (cwd: string, sessionId: string) => Promise<void>;
+
+/** Set a persisted session's archived flag (real = SDK `tagSession`). */
+export type ArchiveStored = (cwd: string, sessionId: string, archived: boolean) => Promise<void>;
 
 /**
  * Detect whether a session is held by a live process other than this server, in

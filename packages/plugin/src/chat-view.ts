@@ -1,5 +1,5 @@
 import { App, ItemView, MarkdownRenderer, Menu, Modal, Notice, Platform, setIcon, type WorkspaceLeaf } from "obsidian";
-import type { BridgeEvent, PermissionMode } from "@occ/protocol";
+import type { BridgeEvent, PermissionMode, SessionSummary } from "@occ/protocol";
 import type ClaudeChatPlugin from "./main";
 import { BridgeClient, type WsLike } from "./bridge-client";
 import { DebugLog } from "./debug-log";
@@ -90,6 +90,7 @@ export class ChatView extends ItemView {
 	private pickerEl!: HTMLElement;
 	private pickerOpen = false;
 	private sessionsLoading = false;
+	private archivedSectionOpen = false;
 	private sessionsLastOk = 0;
 	private sessionsRefreshTimer: number | undefined;
 	private inputEl!: HTMLTextAreaElement;
@@ -976,40 +977,62 @@ export class ChatView extends ItemView {
 			if (!this.sessionsLoading) this.pickerEl.createDiv({ cls: "occ-picker-empty", text: "No sessions found." });
 			return;
 		}
-		for (const s of this.state.sessions) {
-			const item = this.pickerEl.createDiv({ cls: "occ-picker-item" });
-			const isCurrent = !!this.state.sessionId && s.sessionId === this.state.sessionId;
-			if (isCurrent) {
-				item.addClass("occ-picker-current");
-				item.setAttr("aria-current", "true");
-			}
-			const main = item.createDiv({ cls: "occ-picker-main" });
-			const named = s.title && s.title.trim();
-			const startedAgo = s.updatedAt ? relativeTime(Date.now() - s.updatedAt) : "just now";
-			main.createSpan({ cls: "occ-picker-title", text: named || `New session — started ${startedAgo}` });
-			const when = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "";
-			const meta = [isCurrent ? "● current" : s.status, when].filter(Boolean).join(" · ");
-			if (meta) main.createDiv({ cls: "occ-picker-meta", text: meta });
-			main.addEventListener("click", () => this.resumeSession(s.sessionId, named || undefined));
 
-			const label = named || `New session — started ${startedAgo}`;
-			const more = item.createEl("button", { cls: "occ-picker-more" });
-			setIcon(more, "more-vertical");
-			more.setAttr("aria-label", "Session actions");
-			more.addEventListener("click", (e) => {
-				e.stopPropagation();
-				this.openSessionActions(e, s.sessionId, named || "", label);
+		const active = this.state.sessions.filter((s) => !s.archived);
+		const archived = this.state.sessions.filter((s) => s.archived);
+
+		for (const s of active) this.renderPickerItem(s);
+
+		if (archived.length > 0) {
+			const toggle = this.pickerEl.createDiv({ cls: "occ-picker-archived-toggle" });
+			const chevron = toggle.createSpan({ cls: "occ-picker-archived-chevron" });
+			setIcon(chevron, this.archivedSectionOpen ? "chevron-down" : "chevron-right");
+			toggle.createSpan({ text: `Archived (${archived.length})` });
+			toggle.addEventListener("click", () => {
+				this.archivedSectionOpen = !this.archivedSectionOpen;
+				this.renderPicker();
 			});
+			if (this.archivedSectionOpen) {
+				for (const s of archived) this.renderPickerItem(s);
+			}
 		}
+	}
+
+	private renderPickerItem(s: SessionSummary): void {
+		const item = this.pickerEl.createDiv({ cls: "occ-picker-item" });
+		const isCurrent = !!this.state.sessionId && s.sessionId === this.state.sessionId;
+		if (isCurrent) {
+			item.addClass("occ-picker-current");
+			item.setAttr("aria-current", "true");
+		}
+		if (s.archived) item.addClass("occ-picker-archived");
+		const main = item.createDiv({ cls: "occ-picker-main" });
+		const named = s.title && s.title.trim();
+		const startedAgo = s.updatedAt ? relativeTime(Date.now() - s.updatedAt) : "just now";
+		main.createSpan({ cls: "occ-picker-title", text: named || `New session — started ${startedAgo}` });
+		const when = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "";
+		const meta = [isCurrent ? "● current" : s.status, when].filter(Boolean).join(" · ");
+		if (meta) main.createDiv({ cls: "occ-picker-meta", text: meta });
+		main.addEventListener("click", () => this.resumeSession(s.sessionId, named || undefined));
+
+		const label = named || `New session — started ${startedAgo}`;
+		const more = item.createEl("button", { cls: "occ-picker-more" });
+		setIcon(more, "more-vertical");
+		more.setAttr("aria-label", "Session actions");
+		more.addEventListener("click", (e) => {
+			e.stopPropagation();
+			this.openSessionActions(e, s.sessionId, named || "", label, !!s.archived);
+		});
 	}
 
 	/** Toolbar kebab: open the loaded session's action menu (mirrors its picker kebab). */
 	private openCurrentSessionActions(evt: MouseEvent): void {
 		if (!this.state.sessionId) return;
-		this.openSessionActions(evt, this.state.sessionId, this.currentTitle ?? "", this.currentSessionName());
+		const current = this.state.sessions.find((s) => s.sessionId === this.state.sessionId);
+		this.openSessionActions(evt, this.state.sessionId, this.currentTitle ?? "", this.currentSessionName(), !!current?.archived);
 	}
 
-	private openSessionActions(evt: MouseEvent, sessionId: string, currentTitle: string, label: string): void {
+	private openSessionActions(evt: MouseEvent, sessionId: string, currentTitle: string, label: string, archived: boolean): void {
 		const menu = new Menu();
 		// Copy a note-ready link WITHOUT touching the session (no close/switch).
 		menu.addItem((i) =>
@@ -1034,6 +1057,12 @@ export class ChatView extends ItemView {
 				.onClick(() => this.closeSession(sessionId))
 		);
 		menu.addItem((i) => i.setTitle("Rename…").setIcon("pencil").onClick(() => this.openRename(sessionId, currentTitle)));
+		menu.addItem((i) =>
+			i
+				.setTitle(archived ? "Unarchive" : "Archive")
+				.setIcon(archived ? "archive-restore" : "archive")
+				.onClick(() => this.client.archiveSession(sessionId, !archived))
+		);
 		menu.addItem((i) => i.setTitle("Delete…").setIcon("trash-2").onClick(() => this.confirmDelete(sessionId, label)));
 		menu.showAtMouseEvent(evt);
 	}

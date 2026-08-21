@@ -187,6 +187,10 @@ export class BridgeClient {
 		this.send({ type: "delete_session", sessionId });
 	}
 
+	archiveSession(sessionId: string, archived: boolean): void {
+		this.send({ type: "archive_session", sessionId, archived });
+	}
+
 	loadOlder(sessionId: string): void {
 		this.send({ type: "load_older", sessionId });
 	}

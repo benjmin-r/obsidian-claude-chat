@@ -787,6 +787,28 @@
 	color: var(--text-muted);
 }
 
+.occ-picker-archived-toggle {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 8px 10px;
+	color: var(--text-muted);
+	font-size: 0.8em;
+	cursor: pointer;
+}
+
+.occ-picker-archived-toggle:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.occ-picker-archived-chevron {
+	display: flex;
+}
+
+.occ-picker-item.occ-picker-archived {
+	opacity: 0.6;
+}
+
 /* @-mention-style conversation link autocomplete (/occ) */
 .occ-link-suggest-title {
 	font-weight: 500;

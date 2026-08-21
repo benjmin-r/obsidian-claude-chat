@@ -13,6 +13,11 @@ describe("parseClientMessage", () => {
 			type: "delete_session",
 			sessionId: "s",
 		});
+		expect(parseClientMessage('{"type":"archive_session","sessionId":"s","archived":true}')).toEqual({
+			type: "archive_session",
+			sessionId: "s",
+			archived: true,
+		});
 		expect(parseClientMessage('{"type":"load_older","sessionId":"s"}')).toEqual({
 			type: "load_older",
 			sessionId: "s",

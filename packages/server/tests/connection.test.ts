@@ -15,6 +15,7 @@ function setup() {
 			loadHistory: async () => [],
 			renameStored: async () => undefined,
 			deleteStored: async () => undefined,
+			archiveStored: async () => undefined,
 		},
 		{ cwd: "/v", defaultModel: "m" }
 	);
@@ -104,13 +105,14 @@ describe("Connection session flow", () => {
 				runQuery: fake.runQuery,
 				now: () => 1,
 				newHandleId: () => `h${(n += 1)}`,
-				listStored: async () => [{ sessionId: "old-1", title: "Old chat", updatedAt: 5 }],
+				listStored: async () => [{ sessionId: "old-1", title: "Old chat", updatedAt: 5, archived: false }],
 				loadHistory: async () => [
 					{ type: "user", message: { content: "earlier question" } },
 					{ type: "assistant", message: { content: [{ type: "text", text: "earlier answer" }] } },
 				],
 				renameStored: async () => undefined,
 				deleteStored: async () => undefined,
+				archiveStored: async () => undefined,
 			},
 			{ cwd: "/v", defaultModel: "m" }
 		);
@@ -134,12 +136,13 @@ describe("Connection session flow", () => {
 				runQuery: fake.runQuery,
 				now: () => 1,
 				newHandleId: () => `h${(n += 1)}`,
-				listStored: async () => [{ sessionId: "s1", title: "renamed!", updatedAt: 9 }],
+				listStored: async () => [{ sessionId: "s1", title: "renamed!", updatedAt: 9, archived: false }],
 				loadHistory: async () => [],
 				renameStored: async (_cwd, id, title) => {
 					renamed.push([id, title]);
 				},
 				deleteStored: async () => undefined,
+				archiveStored: async () => undefined,
 			},
 			{ cwd: "/v", defaultModel: "m" }
 		);
@@ -156,11 +159,45 @@ describe("Connection session flow", () => {
 		).toBe(true);
 	});
 
+	it("archives a session and replies with a refreshed list", async () => {
+		const fake = makeFakeQuery();
+		let n = 0;
+		const archivedCalls: Array<[string, boolean]> = [];
+		let archived = false;
+		const manager = new SessionManager(
+			{
+				runQuery: fake.runQuery,
+				now: () => 1,
+				newHandleId: () => `h${(n += 1)}`,
+				listStored: async () => [{ sessionId: "s1", title: "Some chat", updatedAt: 9, archived }],
+				loadHistory: async () => [],
+				renameStored: async () => undefined,
+				deleteStored: async () => undefined,
+				archiveStored: async (_cwd, id, next) => {
+					archivedCalls.push([id, next]);
+					archived = next;
+				},
+			},
+			{ cwd: "/v", defaultModel: "m" }
+		);
+		const writers = createWriterRegistry();
+		const sent: BridgeEvent[] = [];
+		const conn = new Connection({ manager, token: "secret", writers, send: (e) => sent.push(e) });
+		conn.handle({ type: "hello", token: "secret" });
+		conn.handle({ type: "archive_session", sessionId: "s1", archived: true });
+		await flush();
+		await flush();
+		expect(archivedCalls).toEqual([["s1", true]]);
+		expect(
+			sent.some((e) => e.type === "sessions_list" && e.sessions.some((s) => s.sessionId === "s1" && s.archived))
+		).toBe(true);
+	});
+
 	it("deletes a session and replies with a refreshed list", async () => {
 		const fake = makeFakeQuery();
 		let n = 0;
 		const deleted: string[] = [];
-		let remaining = [{ sessionId: "d1", title: "Doomed", updatedAt: 9 }];
+		let remaining = [{ sessionId: "d1", title: "Doomed", updatedAt: 9, archived: false }];
 		const manager = new SessionManager(
 			{
 				runQuery: fake.runQuery,
@@ -173,6 +210,7 @@ describe("Connection session flow", () => {
 					deleted.push(id);
 					remaining = remaining.filter((s) => s.sessionId !== id);
 				},
+				archiveStored: async () => undefined,
 			},
 			{ cwd: "/v", defaultModel: "m" }
 		);
@@ -213,6 +251,7 @@ describe("Connection session flow", () => {
 				loadHistory: async () => many,
 				renameStored: async () => undefined,
 				deleteStored: async () => undefined,
+				archiveStored: async () => undefined,
 			},
 			{ cwd: "/v", defaultModel: "m" }
 		);
@@ -291,6 +330,7 @@ describe("Connection session flow", () => {
 				loadHistory: async () => [],
 				renameStored: async () => undefined,
 				deleteStored: async () => undefined,
+				archiveStored: async () => undefined,
 				detectExternalActivity: () => ({ severity }),
 			},
 			{ cwd: "/v", defaultModel: "m" }
@@ -363,10 +403,11 @@ describe("Connection session flow", () => {
 				runQuery: fake.runQuery,
 				now: () => 1,
 				newHandleId: () => `h${(n += 1)}`,
-				listStored: async () => [{ sessionId: "old-1", title: "Old chat", updatedAt: 5 }],
+				listStored: async () => [{ sessionId: "old-1", title: "Old chat", updatedAt: 5, archived: false }],
 				loadHistory: async () => [{ type: "user", message: { content: "earlier question" } }],
 				renameStored: async () => undefined,
 				deleteStored: async () => undefined,
+				archiveStored: async () => undefined,
 			},
 			{ cwd: "/v", defaultModel: "m" }
 		);

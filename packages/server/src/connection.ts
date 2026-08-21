@@ -91,6 +91,9 @@ export class Connection {
 			case "delete_session":
 				this.onDelete(msg.sessionId);
 				return {};
+			case "archive_session":
+				this.onArchive(msg.sessionId, msg.archived);
+				return {};
 			case "close_session":
 				// Detach + release for a clean CLI hand-off (does NOT delete the store).
 				if (this.attached?.actor.id === msg.sessionId) this.detach();
@@ -207,6 +210,17 @@ export class Connection {
 			.catch((err: unknown) => {
 				const message = err instanceof Error ? err.message : String(err);
 				this.deps.send({ type: "error", sessionId, message: `Rename failed: ${message}` });
+			});
+	}
+
+	private onArchive(sessionId: string, archived: boolean): void {
+		this.deps.manager
+			.archiveSession(sessionId, archived)
+			.then(() => this.deps.manager.listSummaries())
+			.then((sessions) => this.deps.send({ type: "sessions_list", sessions }))
+			.catch((err: unknown) => {
+				const message = err instanceof Error ? err.message : String(err);
+				this.deps.send({ type: "error", sessionId, message: `Archive failed: ${message}` });
 			});
 	}
 

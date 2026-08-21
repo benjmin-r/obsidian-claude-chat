@@ -8,7 +8,7 @@
 
 import { mapHistoryMessages, type PermissionMode, type SessionSummary } from "@occ/protocol";
 import { SessionActor, type SessionActorDeps } from "./session-actor";
-import type { DeleteStored, DetectExternalActivity, ListStored, LoadHistory, RenameStored } from "./ports";
+import type { ArchiveStored, DeleteStored, DetectExternalActivity, ListStored, LoadHistory, RenameStored } from "./ports";
 
 export interface SessionManagerConfig {
 	cwd: string;
@@ -35,6 +35,8 @@ export interface SessionManagerDeps extends SessionActorDeps {
 	renameStored: RenameStored;
 	/** permanently delete a persisted session. */
 	deleteStored: DeleteStored;
+	/** set a persisted session's archived flag. */
+	archiveStored: ArchiveStored;
 	/** detect a live external (CLI) holder of a session → read-only; optional. */
 	detectExternalActivity?: DetectExternalActivity;
 }
@@ -274,6 +276,11 @@ export class SessionManager {
 		await this.deps.renameStored(this.config.cwd, sessionId, title);
 	}
 
+	/** Set a session's archived flag in the store. */
+	async archiveSession(sessionId: string, archived: boolean): Promise<void> {
+		await this.deps.archiveStored(this.config.cwd, sessionId, archived);
+	}
+
 	/**
 	 * Permanently delete a session: remove it from the CLI store AND drop any
 	 * live actor (otherwise it would keep running against a deleted store file).
@@ -299,7 +306,7 @@ export class SessionManager {
 
 	/** Active in-memory sessions merged with persisted ones from the store, newest first. */
 	async listSummaries(): Promise<SessionSummary[]> {
-		let stored: { sessionId: string; title: string; updatedAt: number }[] = [];
+		let stored: { sessionId: string; title: string; updatedAt: number; archived: boolean }[] = [];
 		try {
 			stored = await this.deps.listStored(this.config.cwd);
 		} catch {
@@ -309,10 +316,11 @@ export class SessionManager {
 
 		// Active sessions keep their live status but borrow the stored title — an
 		// actor has no title of its own, so without this a resumed (active)
-		// session would display its UUID and a rename would never show.
+		// session would display its UUID and a rename would never show. Same
+		// reasoning applies to the archived flag.
 		const active = this.list().map((a) => {
 			const info = storedById.get(a.sessionId);
-			return info ? { ...a, title: info.title } : a;
+			return info ? { ...a, title: info.title, archived: info.archived } : a;
 		});
 		const activeIds = new Set(active.map((s) => s.sessionId));
 
@@ -325,6 +333,7 @@ export class SessionManager {
 				status: "idle" as const,
 				cwd: this.config.cwd,
 				updatedAt: s.updatedAt,
+				archived: s.archived,
 			}));
 
 		return [...active, ...storedOnly].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
