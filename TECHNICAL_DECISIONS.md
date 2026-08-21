@@ -6,6 +6,40 @@ Each entry is ≤200 words (longer when a hard-won investigation is worth preser
 
 ---
 
+## TDL-20260821-013: Session archive/unarchive reuses the SDK's `tagSession`, not a new store
+
+**Date:** 2026-08-21
+**Status:** Implemented
+
+**Context:** The session picker had no way to hide nightly/automated-run
+clutter without deleting sessions outright. Needed an archived flag that
+persists across server restarts, without introducing the server's first
+piece of local state — today `occ-server` is fully stateless and delegates
+all session persistence to the Claude Agent SDK's on-disk store.
+
+**Decision:** reuse the SDK's existing per-session `tag` field via
+`tagSession(id, "archived" | null, { dir })` — the exact same mechanism
+`renameSession`/`customTitle` already uses for titles. `SessionSummary` gained
+an `archived` flag, threaded through `SessionManager.listSummaries()` the same
+way `title` already is. Tradeoff accepted: `tag` is a single string, so a
+future freeform-tagging feature would need to coexist with `"archived"` as a
+sentinel value rather than stack with it. The picker groups archived sessions
+into a collapsed "Archived (N)" section instead of interleaving by recency,
+and they're excluded from the `/occ` note-link autocomplete.
+
+**Bug hit during rollout:** `ws-transport.ts` maintains its own
+`CLIENT_MESSAGE_TYPES` allowlist of frame-type strings, duplicating (not
+derived from) the `ClientMessage` protocol union — adding `archive_session` to
+`messages.ts` didn't register there, so the server's frame parser silently
+rejected every archive attempt as "Malformed message." before it ever reached
+`Connection`. No compiler error catches this class of drift since the set is
+untyped strings; worth a follow-up to derive the allowlist from the union
+instead of hand-maintaining a parallel list.
+
+**Files:** `packages/protocol/src/messages.ts`, `packages/server/src/{ports,sdk-adapter,session-manager,connection,ws-transport,index}.ts`, `packages/plugin/src/{bridge-client,chat-view,link-insert}.ts`.
+
+---
+
 ## TDL-20260708-009: Show thinking — request summarized reasoning (Opus redacts raw)
 
 **Date:** 2026-07-08
