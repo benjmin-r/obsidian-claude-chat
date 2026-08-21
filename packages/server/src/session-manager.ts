@@ -6,7 +6,7 @@
  * still hold the provisional id keep resolving to the same actor.
  */
 
-import { mapHistoryMessages, type PermissionMode, type SessionSummary } from "@occ/protocol";
+import { mapHistoryMessages, type PermissionMode, type RenderEvent, type SessionSummary } from "@occ/protocol";
 import { SessionActor, type SessionActorDeps } from "./session-actor";
 import type { ArchiveStored, DeleteStored, DetectExternalActivity, ListStored, LoadHistory, RenameStored } from "./ports";
 
@@ -244,6 +244,18 @@ export class SessionManager {
 		// immediately — no "writable→read-only" flicker on pick/reload.
 		actor.setExternalActivity(this.detect(this.config.cwd, sessionId));
 		return actor;
+	}
+
+	/**
+	 * Read a session's COMPLETE transcript in one shot: no actor creation, no
+	 * replay buffer, no writer-claim — export is a one-off bulk read of a
+	 * possibly-idle or already-reaped session, not a live attach. Reads directly
+	 * from disk, so a currently mid-turn session may miss its not-yet-persisted
+	 * in-flight turn (documented limitation, see TDL-20260820-010).
+	 */
+	async loadFullHistory(sessionId: string): Promise<RenderEvent[]> {
+		const messages = await this.deps.loadHistory(this.config.cwd, sessionId);
+		return mapHistoryMessages(messages, sessionId);
 	}
 
 	/**

@@ -5,20 +5,11 @@
  * module never re-derives grouping.
  */
 
-import type { ActivityGroup, ActivityItem, DisplayItem } from "./view-model";
-import { escapeHtml, summarizeExportItem, truncateInline, truncateToolOutput, type ExportMeta } from "./export-shared";
-import { conversationLinkFromParts } from "./occ-links";
-
-/** Cap on a collapsed activity group's comma-joined summary line. */
-const GROUP_LABEL_LIMIT = 200;
+import type { ActivityGroup, ActivityItem, DisplayItem, ToolEntry } from "./view-model";
+import { summarizeExportItem, truncateToolOutput, type ExportMeta } from "./export-shared";
 
 function yamlString(s: string): string {
 	return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
-
-function formatTimeHHmm(ms: number): string {
-	const d = new Date(ms);
-	return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 function frontmatter(meta: ExportMeta): string {
@@ -28,82 +19,72 @@ function frontmatter(meta: ExportMeta): string {
 	return lines.join("\n");
 }
 
-function metadataLine(meta: ExportMeta): string {
-	const dateStr = meta.updatedAt !== undefined ? new Date(meta.updatedAt).toISOString().slice(0, 10) : undefined;
-	const parts = [meta.model, dateStr, conversationLinkFromParts(meta.sessionId, meta.title)].filter(
-		(p): p is string => !!p
-	);
-	return `*${parts.join(" · ")}*`;
+function turnBlock(who: "You" | "Claude", text: string): string {
+	return `**${who}** · ${text}`;
 }
 
-function turnBlock(
-	who: "You" | "Claude",
-	text: string,
-	id: string | undefined,
-	timestamps: Record<string, number>
-): string {
-	const ts = id !== undefined ? timestamps[id] : undefined;
-	const suffix = ts !== undefined ? ` \`${formatTimeHHmm(ts)}\`` : "";
-	return `**${who}:**${suffix}\n${text}`;
+/** Prefix every line (including blank separator lines) with `> ` so it stays inside the enclosing callout. */
+function quoteLines(text: string): string {
+	return text
+		.split("\n")
+		.map((line) => `> ${line}`)
+		.join("\n");
 }
 
 /**
- * Content nested inside a `<details>` block, per TDL-20260820-012: Obsidian's
- * markdown renderer treats everything between raw HTML tags as opaque HTML, not
- * re-parsed markdown, so fenced code blocks placed there never render as code —
- * they show up as literal ``` text. Emit escaped `<pre>` HTML instead (matching
- * `export-html.ts`) so nested content renders correctly regardless.
+ * Flat, single-level Obsidian callout: `> [!type]- title` header, folded closed
+ * by default (the `-` modifier), followed by the quoted body. Callout content is
+ * parsed as real markdown (unlike raw `<details>` HTML — see TDL-20260821-014),
+ * so fenced code blocks inside `body` render with syntax highlighting.
  */
-function toolDetail(item: ActivityItem): string {
-	if (item.kind === "thinking") {
-		return `<details>\n<summary>${escapeHtml(summarizeExportItem(item))}</summary>\n<pre>${escapeHtml(item.text)}</pre>\n</details>`;
-	}
-	const { entry } = item;
+function callout(type: "info" | "success" | "failure", title: string, body: string): string {
+	const header = `> [!${type}]- ${title}`;
+	return body ? `${header}\n${quoteLines(body)}` : header;
+}
+
+function toolCalloutBody(entry: ToolEntry): string {
 	const blocks: string[] = [];
-	if (entry.input !== undefined) blocks.push(`<pre>${escapeHtml(JSON.stringify(entry.input, null, 2))}</pre>`);
-	if (entry.result) blocks.push(`<pre>${escapeHtml(truncateToolOutput(entry.result.content))}</pre>`);
-	return `<details>\n<summary>${escapeHtml(summarizeExportItem(item))}</summary>\n${blocks.join("\n")}\n</details>`;
+	if (entry.input !== undefined) blocks.push("```json\n" + JSON.stringify(entry.input, null, 2) + "\n```");
+	if (entry.result) blocks.push("```\n" + truncateToolOutput(entry.result.content) + "\n```");
+	return blocks.join("\n\n");
 }
 
-/** Timestamps are shown at turn granularity only (see TDL-20260820-010) — an activity group's
- * nested thinking/tool items never carry their own, matching how a transcript reads naturally. */
-function activityGroupBlock(group: ActivityGroup): string {
-	const label = escapeHtml(truncateInline(group.items.map(summarizeExportItem).join(", "), GROUP_LABEL_LIMIT));
-	const inner = group.items.map((item) => toolDetail(item)).join("\n");
-	return `<details>\n<summary>${label}</summary>\n${inner}\n</details>`;
+/**
+ * Each thinking/tool step in a run gets its own independent callout — never
+ * nested inside a group wrapper, which would force a pointless double-expand
+ * click for a single-item run (see TDL-20260821-014).
+ */
+function activityItemBlock(item: ActivityItem): string {
+	if (item.kind === "thinking") return callout("info", summarizeExportItem(item), item.text);
+	const type = item.entry.result?.isError ? "failure" : "success";
+	return callout(type, summarizeExportItem(item), toolCalloutBody(item.entry));
 }
 
-function renderItem(item: DisplayItem, timestamps: Record<string, number>): string {
+function activityBlock(group: ActivityGroup): string {
+	return group.items.map((item) => activityItemBlock(item)).join("\n\n");
+}
+
+function renderItem(item: DisplayItem): string {
 	switch (item.kind) {
 		case "user":
-			return turnBlock("You", item.text, item.id, timestamps);
+			return turnBlock("You", item.text);
 		case "assistant":
-			return turnBlock("Claude", item.text, item.id, timestamps);
+			return turnBlock("Claude", item.text);
 		case "error":
-			return `> ⚠️ ${item.text}`;
+			return `> ⚠️ **Error:** ${item.text}`;
 		case "activity":
-			return activityGroupBlock(item);
+			return activityBlock(item);
 	}
 }
 
 /**
- * Render a full transcript to Markdown: YAML frontmatter (carries `session_id`
- * since it's no longer in the filename), a title heading, a metadata line linking
- * back to the conversation, then each turn/activity group in order. `timestamps`
- * maps a user/assistant/thinking item's `messageId` to an epoch-ms best-effort
- * backfill (see TDL-20260820-010) — entries without a match render without a
- * timestamp, silently.
+ * Render a full transcript to Markdown: YAML frontmatter (`session_id`, `model`,
+ * `updated`, `title`) followed immediately by the turns/activity in order, each
+ * consecutive block separated by a `---` divider. Joining via `.join("\n\n---\n\n")`
+ * rather than appending a divider inside each block avoids a stray trailing rule
+ * after the last block.
  */
-export function renderMarkdown(
-	items: DisplayItem[],
-	meta: ExportMeta,
-	timestamps: Record<string, number> = {}
-): string {
-	const sections = [
-		frontmatter(meta),
-		`# ${meta.title}`,
-		metadataLine(meta),
-		...items.map((item) => renderItem(item, timestamps)),
-	];
-	return sections.join("\n\n").trimEnd() + "\n";
+export function renderMarkdown(items: DisplayItem[], meta: ExportMeta): string {
+	const body = items.map((item) => renderItem(item)).join("\n\n---\n\n");
+	return [frontmatter(meta), body].join("\n\n").trimEnd() + "\n";
 }

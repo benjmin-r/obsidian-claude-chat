@@ -33,6 +33,10 @@ export interface ClaudeChatSettings {
 	 * foregrounding). Reopen the chat view after changing.
 	 */
 	debugConnectionPanel: boolean;
+	/** Vault folder conversation exports are written to, relative to the vault root. */
+	exportFolder: string;
+	/** Group exported files into `YYYY-MM/` subfolders under exportFolder. */
+	exportGroupByMonth: boolean;
 }
 
 export const DEFAULT_SETTINGS: ClaudeChatSettings = {
@@ -44,6 +48,8 @@ export const DEFAULT_SETTINGS: ClaudeChatSettings = {
 	reconnectDelayMs: 1500,
 	debugKeyboardPanel: false,
 	debugConnectionPanel: false,
+	exportFolder: "Claude Conversations",
+	exportGroupByMonth: false,
 };
 
 /** Models offered in the new-session dropdown. */

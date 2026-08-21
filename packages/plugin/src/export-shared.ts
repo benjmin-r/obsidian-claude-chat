@@ -1,8 +1,8 @@
 /**
- * Pure helpers shared by the markdown/HTML export renderers (`export-markdown.ts`,
- * `export-html.ts`). No Obsidian imports — kept transport- and DOM-free so the
- * renderers can be exercised standalone (unit tests, the fixture preview script)
- * without a running plugin or server.
+ * Pure helpers shared by the export renderer (`export-markdown.ts`) and the
+ * eventual vault-write path. No Obsidian imports — kept transport- and DOM-free
+ * so the renderer can be exercised standalone (unit tests, the fixture preview
+ * script) without a running plugin or server.
  */
 
 import type { ActivityItem, ToolEntry } from "./view-model";
@@ -21,12 +21,6 @@ export const TOOL_OUTPUT_LIMIT = 8000;
 /** Truncate long tool output, matching the live view's in-transcript truncation. */
 export function truncateToolOutput(content: string, limit = TOOL_OUTPUT_LIMIT): string {
 	return content.length > limit ? content.slice(0, limit) + "\n…(truncated)" : content;
-}
-
-/** Escape text placed directly into HTML markup (e.g. a `<summary>` line) — never fenced code content. */
-export function escapeHtml(s: string): string {
-	const map: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
-	return s.replace(/[&<>"']/g, (c) => map[c]!);
 }
 
 /** Shorten an inline string with an ellipsis, for one-liner summaries. */

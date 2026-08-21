@@ -112,6 +112,29 @@ export class ClaudeChatSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName("Export folder")
+			.setDesc("Vault folder conversation exports are written to.")
+			.addText((text) =>
+				text
+					.setPlaceholder("Claude Conversations")
+					.setValue(this.plugin.settings.exportFolder)
+					.onChange(async (value) => {
+						this.plugin.settings.exportFolder = value.trim();
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Group exports by month")
+			.setDesc("File exports into YYYY-MM subfolders under the export folder.")
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.exportGroupByMonth).onChange(async (value) => {
+					this.plugin.settings.exportGroupByMonth = value;
+					await this.plugin.saveSettings();
+				})
+			);
+
+		new Setting(containerEl)
 			.setName("Connection debug panel")
 			.setDesc(
 				"Show a small on-screen widget that records connection events (foreground/reconnect/attach/server errors). Copy sends the log to the clipboard; Mark inserts a section marker. For diagnosing connection issues like 'No such session' on foregrounding."

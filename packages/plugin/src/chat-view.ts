@@ -1,10 +1,12 @@
-import { App, ItemView, MarkdownRenderer, Menu, Modal, Notice, Platform, setIcon, type WorkspaceLeaf } from "obsidian";
-import type { BridgeEvent, PermissionMode, SessionSummary } from "@occ/protocol";
+import { App, ItemView, MarkdownRenderer, Menu, Modal, normalizePath, Notice, Platform, setIcon, type WorkspaceLeaf } from "obsidian";
+import type { BridgeEvent, PermissionMode, RenderEvent, SessionSummary } from "@occ/protocol";
 import type ClaudeChatPlugin from "./main";
 import { BridgeClient, type WsLike } from "./bridge-client";
 import { DebugLog } from "./debug-log";
 import { FileSuggest } from "./file-suggest";
-import { truncateToolOutput } from "./export-shared";
+import { renderMarkdown } from "./export-markdown";
+import { truncateToolOutput, type ExportMeta } from "./export-shared";
+import { writeExportFile } from "./export-writer";
 import { conversationLinkFromParts } from "./link-insert";
 import { MODEL_OPTIONS } from "./settings-types";
 import {
@@ -67,6 +69,8 @@ export class ChatView extends ItemView {
 	private pendingScrollTo: string | undefined;
 	/** true while a load_older requested by the deep-link resolver is in flight. */
 	private deepLinkLoading = false;
+	/** in-flight export_history requests, resolved/rejected from onEvent by sessionId. */
+	private readonly pendingExports = new Map<string, { resolve: (events: RenderEvent[]) => void; reject: (err: Error) => void }>();
 	/** last text dispatched to the server; used to roll back if the server blocks it. */
 	private lastSentText: string | undefined;
 
@@ -816,6 +820,14 @@ export class ChatView extends ItemView {
 
 	private onEvent(event: BridgeEvent): void {
 		this.state = applyEvent(this.state, event);
+		if (event.type === "export_history_result") {
+			this.pendingExports.get(event.sessionId)?.resolve(event.events);
+			this.pendingExports.delete(event.sessionId);
+		}
+		if (event.type === "error" && event.sessionId && this.pendingExports.has(event.sessionId)) {
+			this.pendingExports.get(event.sessionId)?.reject(new Error(event.message));
+			this.pendingExports.delete(event.sessionId);
+		}
 		if (event.type === "send_blocked") {
 			this.restoreBlockedDraft();
 			return; // restoreBlockedDraft re-renders
@@ -1048,6 +1060,12 @@ export class ChatView extends ItemView {
 		);
 		menu.addItem((i) =>
 			i
+				.setTitle("Export to Markdown")
+				.setIcon("file-text")
+				.onClick(() => void this.exportSession(sessionId, currentTitle))
+		);
+		menu.addItem((i) =>
+			i
 				.setTitle("Copy resume command & close session")
 				.setIcon("terminal")
 				.onClick(() => {
@@ -1070,6 +1088,64 @@ export class ChatView extends ItemView {
 		);
 		menu.addItem((i) => i.setTitle("Delete…").setIcon("trash-2").onClick(() => this.confirmDelete(sessionId, label)));
 		menu.showAtMouseEvent(evt);
+	}
+
+	/**
+	 * One-shot full-history fetch over the persistent chat socket — bypasses the
+	 * windowed live transcript (`load_older`'s 30-event paging) entirely. Resolved
+	 * by onEvent on `export_history_result`, rejected on a matching `error` or
+	 * timeout.
+	 */
+	private requestFullHistory(sessionId: string, timeoutMs = 20000): Promise<RenderEvent[]> {
+		return new Promise((resolve, reject) => {
+			const timer = window.setTimeout(() => {
+				this.pendingExports.delete(sessionId);
+				reject(new Error("Timed out waiting for the server."));
+			}, timeoutMs);
+			this.pendingExports.set(sessionId, {
+				resolve: (events) => {
+					window.clearTimeout(timer);
+					resolve(events);
+				},
+				reject: (err) => {
+					window.clearTimeout(timer);
+					reject(err);
+				},
+			});
+			this.client.exportHistory(sessionId);
+		});
+	}
+
+	/**
+	 * Export a session's complete transcript to a Markdown note in the vault.
+	 * Works uniformly for the current session and any picker-row session — export
+	 * is a stateless disk read, independent of live-actor status. A currently
+	 * mid-turn session may miss its in-flight, not-yet-persisted turn (documented
+	 * limitation, see TDL-20260820-010).
+	 */
+	private async exportSession(sessionId: string, title: string): Promise<void> {
+		try {
+			const summary = this.state.sessions.find((s) => s.sessionId === sessionId);
+			const meta: ExportMeta = {
+				sessionId,
+				title: title.trim() || "Untitled session",
+				model: summary?.model ?? this.selectedModel,
+				updatedAt: summary?.updatedAt,
+			};
+			const events = await this.requestFullHistory(sessionId);
+			const items = groupActivity(events.reduce(applyEvent, initialState(meta.model)).items);
+			const path = await writeExportFile(
+				this.app.vault,
+				normalizePath(this.plugin.settings.exportFolder),
+				this.plugin.settings.exportGroupByMonth,
+				meta,
+				renderMarkdown(items, meta)
+			);
+			new Notice(`Exported to ${path}`, 3000);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			new Notice(`Export failed: ${message}`, 5000);
+		}
 	}
 
 	/**

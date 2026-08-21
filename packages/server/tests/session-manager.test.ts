@@ -96,6 +96,31 @@ describe("SessionManager", () => {
 		});
 	});
 
+	describe("loadFullHistory", () => {
+		it("maps stored messages to render events without creating an actor", async () => {
+			const { manager } = makeManager({
+				loadHistory: async () => [
+					{ type: "user", message: { content: "earlier question" } },
+					{ type: "assistant", message: { content: [{ type: "text", text: "earlier answer" }] } },
+				],
+			});
+			const events = await manager.loadFullHistory("sess-1");
+			expect(events.some((e) => e.type === "user_echo" && e.text === "earlier question")).toBe(true);
+			expect(events.some((e) => e.type === "assistant_text_delta" && e.text === "earlier answer")).toBe(true);
+			expect(manager.get("sess-1")).toBeUndefined();
+			expect(manager.list()).toHaveLength(0);
+		});
+
+		it("propagates a loadHistory rejection", async () => {
+			const { manager } = makeManager({
+				loadHistory: async () => {
+					throw new Error("disk read failed");
+				},
+			});
+			await expect(manager.loadFullHistory("sess-1")).rejects.toThrow("disk read failed");
+		});
+	});
+
 	it("resumeWithHistory checks CLI activity immediately so attach reflects read-only at once", async () => {
 		const { manager } = makeManager({
 			detectExternalActivity: () => ({ severity: "busy", pid: 5, entrypoint: "cli" }),

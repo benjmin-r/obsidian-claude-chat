@@ -1,5 +1,5 @@
 import { renderMarkdown } from "../src/export-markdown";
-import type { ExportMeta } from "../src/export-shared";
+import { summarizeExportItem, type ExportMeta } from "../src/export-shared";
 import type { DisplayItem } from "../src/view-model";
 import {
 	errorToolFixture,
@@ -7,7 +7,6 @@ import {
 	multiToolFixture,
 	plainQaFixture,
 	sampleMeta,
-	sampleTimestamps,
 	successfulToolFixture,
 	thinkingFixture,
 } from "./fixtures/export-fixtures";
@@ -28,75 +27,91 @@ describe("renderMarkdown", () => {
 		expect(out).not.toContain("updated:");
 	});
 
-	it("renders a title heading and a metadata line with a conversation link", () => {
+	it("has no H1 heading or metadata line — the body starts immediately after frontmatter", () => {
 		const out = renderMarkdown(plainQaFixture, sampleMeta);
-		expect(out).toContain(`# ${sampleMeta.title}`);
-		expect(out).toContain(`[${sampleMeta.title}](obsidian://occ-chat?session=${sampleMeta.sessionId})`);
+		expect(out).not.toContain(`# ${sampleMeta.title}`);
+		expect(out).toContain(`---\n\n**You** · ${(plainQaFixture[0] as { text: string }).text}`);
 	});
 
-	it("renders user/assistant turns with You:/Claude: prefixes", () => {
+	it("renders user/assistant turns as a bold label, middle dot, and text — no timestamp", () => {
 		const out = renderMarkdown(plainQaFixture, sampleMeta);
-		expect(out).toContain("**You:**\nWhat does the `groupActivity` reducer do?");
-		expect(out).toContain("**Claude:**\n");
+		expect(out).toContain("**You** · What does the `groupActivity` reducer do?");
+		expect(out).toContain(
+			"**Claude** · It folds consecutive tool/thinking items into a single collapsible `ActivityGroup`"
+		);
+		expect(out).not.toMatch(/`\d{2}:\d{2}`/);
 	});
 
-	it("suffixes a turn with a formatted HH:mm timestamp when the messageId is in the map", () => {
-		const out = renderMarkdown(plainQaFixture, sampleMeta, sampleTimestamps);
-		// u1 -> 2026-08-18T08:41:00Z, formatted in local time
-		const expected = new Date(sampleTimestamps.u1!);
-		const hh = String(expected.getHours()).padStart(2, "0");
-		const mm = String(expected.getMinutes()).padStart(2, "0");
-		expect(out).toContain(`**You:** \`${hh}:${mm}\`\n`);
-	});
-
-	it("omits the timestamp silently when the messageId has no entry", () => {
-		const out = renderMarkdown(successfulToolFixture, sampleMeta, sampleTimestamps);
-		// successfulToolFixture's turns (u3/a3) are absent from sampleTimestamps
-		expect(out).toContain("**You:**\nList the files");
-		expect(out).not.toMatch(/\*\*You:\*\* `\d{2}:\d{2}`\nList the files/);
-	});
-
-	it("wraps a collapsed activity group in nested <details>/<summary>", () => {
+	it("renders a thinking activity item as a flat, closed-by-default info callout", () => {
 		const out = renderMarkdown(thinkingFixture, sampleMeta);
-		expect(out).toContain("<details>\n<summary>");
-		// group summary + nested thinking summary => at least two <details> blocks
-		expect(out.match(/<details>/g)?.length).toBeGreaterThanOrEqual(2);
+		const group = thinkingFixture[1] as Extract<DisplayItem, { kind: "activity" }>;
+		const thinkingItem = group.items[0]!;
+		const title = summarizeExportItem(thinkingItem);
+		expect(out).toContain(`> [!info]- ${title}`);
+		expect(out).toContain(`> ${(thinkingItem as { text: string }).text}`);
+		expect(out).not.toContain("<details>");
 	});
 
-	it("pretty-prints tool input as an escaped <pre> block, not a fenced code block", () => {
-		// Obsidian treats content inside a <details> HTML block as opaque HTML, not
-		// re-parsed markdown (see TDL-20260820-012) — a ``` fence there renders as
-		// literal text, so nested content must be raw HTML instead.
+	it("renders a successful tool call as a flat success callout with fenced json input and fenced output", () => {
 		const out = renderMarkdown(successfulToolFixture, sampleMeta);
-		expect(out).toContain("<pre>{\n  &quot;command&quot;: &quot;ls packages/plugin/src&quot;\n}</pre>");
-		expect(out).not.toContain("```json");
+		expect(out).toContain("> [!success]- Bash: ls packages/plugin/src");
+		expect(out).toContain("> ```json");
+		expect(out).toContain('>   "command": "ls packages/plugin/src"');
+		expect(out).toContain("> chat-view.ts");
+		expect(out).toContain("> main.ts");
+		expect(out).not.toContain("<pre>");
+		expect(out).not.toContain("<details>");
 	});
 
-	it("renders tool result as an escaped <pre> block", () => {
-		const out = renderMarkdown(successfulToolFixture, sampleMeta);
-		expect(out).toContain("<pre>chat-view.ts\nmain.ts\nview-model.ts</pre>");
-	});
-
-	it("marks an error tool call with a warning icon in the summary line", () => {
+	it("marks an errored tool call with a failure callout, warning icon from the shared summary label", () => {
 		const out = renderMarkdown(errorToolFixture, sampleMeta);
-		expect(out).toContain("⚠️ Bash: rm build/missing.log");
+		expect(out).toContain("> [!failure]- ⚠️ Bash: rm build/missing.log");
 	});
 
-	it("truncates a long tool output at the shared limit", () => {
+	it("truncates a long tool output within the fenced block at the shared limit", () => {
 		const out = renderMarkdown(longOutputFixture, sampleMeta);
 		expect(out).toContain("…(truncated)");
 		const fullContent = "line of build output\n".repeat(500);
 		expect(out).not.toContain(fullContent);
 	});
 
-	it("folds multiple tool calls plus a leading thinking step into one group", () => {
+	it("flattens a multi-item activity run into consecutive callouts with no group wrapper and no divider between them", () => {
 		const out = renderMarkdown(multiToolFixture, sampleMeta);
-		expect(out).toContain("Thinking: I&#39;ll read the file first, then apply the rename.");
-		expect(out).toContain("Read: src/util.ts");
-		expect(out).toContain("Edit: src/util.ts");
+		expect(out).toContain("Thinking: I'll read the file first, then apply the rename.");
+		expect(out).toContain("> [!success]- Read: src/util.ts");
+		expect(out).toContain("> [!success]- Edit: src/util.ts");
+
+		const headers = out.match(/> \[!(info|success|failure)]-/g) ?? [];
+		expect(headers.length).toBe(3);
+
+		// no comma-joined outer group summary, and no "---" divider between the flat callouts
+		expect(out).not.toContain("Thinking: I'll read the file first, then apply the rename., Read:");
+		const firstIdx = out.indexOf("> [!info]-");
+		const lastIdx = out.lastIndexOf("> [!success]-");
+		expect(out.slice(firstIdx, lastIdx)).not.toContain("\n\n---\n\n");
 	});
 
-	it("escapes HTML-sensitive characters in both the summary label and the <pre> body", () => {
+	it("renders an error item as a plain blockquote, not a callout", () => {
+		const items: DisplayItem[] = [{ kind: "error", text: "Connection lost" }];
+		const out = renderMarkdown(items, sampleMeta);
+		expect(out).toContain("> ⚠️ **Error:** Connection lost");
+		expect(out).not.toContain("[!");
+	});
+
+	it("separates every consecutive block — turn, activity run, turn — with a divider", () => {
+		const out = renderMarkdown(successfulToolFixture, sampleMeta);
+		const dividerCount = (out.match(/\n\n---\n\n/g) ?? []).length;
+		expect(dividerCount).toBe(2);
+	});
+
+	it("has no stray trailing divider or blank line after the final block", () => {
+		const out = renderMarkdown(plainQaFixture, sampleMeta);
+		expect(out.endsWith("\n")).toBe(true);
+		expect(out.endsWith("---\n")).toBe(false);
+		expect(out.endsWith("\n\n")).toBe(false);
+	});
+
+	it("inserts text as-is into real markdown context — no escaping needed anywhere", () => {
 		const items: DisplayItem[] = [
 			{
 				kind: "activity",
@@ -115,14 +130,8 @@ describe("renderMarkdown", () => {
 			},
 		];
 		const out = renderMarkdown(items, sampleMeta);
-		expect(out).toContain("Bash: &lt;script&gt;alert(1)&lt;/script&gt;");
-		expect(out).toContain("<pre>&lt;b&gt;raw&lt;/b&gt;</pre>");
-		expect(out).not.toContain("<b>raw</b>");
-	});
-
-	it("renders an error item as a blockquote with a warning icon", () => {
-		const items: DisplayItem[] = [{ kind: "error", text: "Connection lost" }];
-		const out = renderMarkdown(items, sampleMeta);
-		expect(out).toContain("> ⚠️ Connection lost");
+		expect(out).toContain("<script>alert(1)</script>");
+		expect(out).toContain("<b>raw</b>");
+		expect(out).not.toContain("&lt;");
 	});
 });

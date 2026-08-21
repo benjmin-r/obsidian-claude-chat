@@ -118,6 +118,7 @@ describe("BridgeClient", () => {
 		h.client.renameSession("s1", "Title");
 		h.client.deleteSession("s1");
 		h.client.loadOlder("s1");
+		h.client.exportHistory("s1");
 		const frames = h.sentFrames();
 		expect(frames).toContainEqual({ type: "new_session", model: "claude-x" });
 		expect(frames).toContainEqual({ type: "user_message", sessionId: "s1", text: "hi" });
@@ -128,6 +129,7 @@ describe("BridgeClient", () => {
 		expect(frames).toContainEqual({ type: "rename_session", sessionId: "s1", title: "Title" });
 		expect(frames).toContainEqual({ type: "delete_session", sessionId: "s1" });
 		expect(frames).toContainEqual({ type: "load_older", sessionId: "s1" });
+		expect(frames).toContainEqual({ type: "export_history", sessionId: "s1" });
 	});
 
 	// the heartbeat schedules a 15000ms tick on open; reconnect schedules are the rest.

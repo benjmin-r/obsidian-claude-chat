@@ -2,9 +2,9 @@
  * Pure conversation-link helpers — no Obsidian imports. Split out of
  * `link-insert.ts` (which pulls in real Obsidian runtime classes at module
  * scope: `EditorSuggest`, `FuzzySuggestModal`, `Notice`) so these can be
- * imported by code that must stay Obsidian-free, e.g. `export-markdown.ts`/
- * `export-html.ts`, which run standalone under plain Node (unit tests, the
- * fixture preview script) with no Obsidian runtime available.
+ * imported by code that must stay Obsidian-free and run standalone under
+ * plain Node (unit tests, fixture preview scripts) with no Obsidian runtime
+ * available.
  */
 
 import type { SessionSummary } from "@occ/protocol";

@@ -1,9 +1,9 @@
 /**
- * Hand-built `DisplayItem[]` scenarios for the export renderers — used by their
+ * Hand-built `DisplayItem[]` scenarios for the export renderer — used by its
  * unit tests and by `scripts/render-export-fixtures.ts` (the standalone preview
- * tool that writes sample `.md`/`.html` files into a vault for visual review).
+ * tool that writes sample `.md` files into a vault for visual review).
  * Each scenario is what `groupActivity(events.reduce(applyEvent, ...).items)`
- * would produce for a real session; built by hand here so the renderers can be
+ * would produce for a real session; built by hand here so the renderer can be
  * developed and reviewed without a live server or SDK session.
  */
 
@@ -167,13 +167,4 @@ export const sampleMeta: ExportMeta = {
 	title: "Sample export walkthrough",
 	model: "claude-sonnet-5",
 	updatedAt: Date.parse("2026-08-18T08:41:01.332Z"),
-};
-
-/** Timestamps keyed by messageId, exercising the hybrid best-effort backfill. */
-export const sampleTimestamps: Record<string, number> = {
-	u1: Date.parse("2026-08-18T08:41:00.000Z"),
-	a1: Date.parse("2026-08-18T08:42:15.000Z"),
-	u2: Date.parse("2026-08-18T09:10:00.000Z"),
-	a2: Date.parse("2026-08-18T09:11:30.000Z"),
-	// u3/a3 intentionally have no entry — exercises the silent-omission path.
 };

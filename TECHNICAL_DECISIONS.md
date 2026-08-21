@@ -6,6 +6,38 @@ Each entry is ≤200 words (longer when a hard-won investigation is worth preser
 
 ---
 
+## TDL-20260821-014: Conversation export — final Markdown-only format, timestamps dropped
+
+**Date:** 2026-08-21
+**Status:** Implemented
+
+**Context:** A fixture-driven style comparison — multiple structural variants
+rendered into the actual vault and reviewed live in Obsidian — surfaced two
+empirical findings that reshaped the export design from TDL-20260820-010's
+plan: (1) Obsidian callouts (`> [!type]`) are parsed as real markdown, so
+fenced code blocks inside them render with syntax highlighting, unlike raw
+`<details>` HTML which Obsidian treats as an opaque block (TDL-20260820-012);
+(2) wrapping a single-item activity run in an outer group callout forced a
+pointless double-expand click, since the outer and inner summaries were
+identical text.
+
+**Decision:** activity items (thinking/tool calls) render as flat, never-
+nested callouts — one per item, no group wrapper — sidestepping finding #1
+via callouts instead of working around it, and avoiding finding #2 entirely.
+A horizontal-rule divider separates every consecutive block. Per-message
+timestamps are dropped entirely (deviates from TDL-20260820-010's Decision
+2 "hybrid backfill" — not worth keeping once seen rendered). HTML export is
+dropped entirely (reverses the original plan's "both formats ship" — callouts
+have no HTML/CSS equivalent, and two structurally-diverging renderers isn't
+worth maintaining).
+
+Full exploration/comparison process recorded in
+`/home/benjamin/.claude/plans/i-want-an-option-linked-cake.md`.
+
+**Files:** `packages/plugin/src/{export-markdown,export-shared}.ts`.
+
+---
+
 ## TDL-20260821-013: Session archive/unarchive reuses the SDK's `tagSession`, not a new store
 
 **Date:** 2026-08-21
@@ -43,7 +75,7 @@ instead of hand-maintaining a parallel list.
 ## TDL-20260820-012: Markdown export nests raw `<pre>` HTML, not fenced code, inside `<details>`
 
 **Date:** 2026-08-20
-**Status:** Implemented
+**Status:** Superseded by TDL-20260821-014
 
 **Context:** TDL-20260820-010's plan flagged this as unconfirmed: "verify
 empirically that fenced code blocks nested inside `<details>` render correctly
@@ -98,7 +130,7 @@ newly-introduced coverage regression.
 ## TDL-20260820-010: Conversation export — full-history round trip + hybrid timestamp backfill
 
 **Date:** 2026-08-20
-**Status:** Planned
+**Status:** Implemented
 
 **Context:** Adding "Export to Markdown/HTML" actions that dump a session's
 **complete** transcript. The live view only ever holds a windowed transcript
@@ -112,24 +144,15 @@ calls the same `loadHistory` port + `mapHistoryMessages` that
 `resumeWithHistory` already uses internally, but with **no actor creation** —
 export is a one-off disk read, not a live session. One round trip instead of N.
 
-**Decision 2 — hybrid timestamp backfill:** the public `getSessionMessages`
-shape drops per-message timestamps, but its backing store
-(`~/.claude/projects/<hash(cwd)>/<sessionId>.jsonl`, confirmed by reading the
-SDK's bundled source and cross-checking real files) carries one per line. The
-project-dir hashing/fallback-matching is internal/undocumented, so we do NOT
-reimplement it for anything structural — `loadHistory`/`mapHistoryMessages`
-stays the sole source of truth for ordering/content/tool-pairing. Timestamps
-are a **best-effort side channel**: a separate raw-`.jsonl` read, keyed by
-message uuid, that returns `{}` on any failure (wrong path, missing file,
-malformed line) rather than throwing — the export never depends on it.
+**Decision 2 — hybrid timestamp backfill:** Superseded by TDL-20260821-014 —
+dropped entirely after being seen rendered in the actual style comparison.
 
 **Decision 3 — filenames:** `{YYYYMMDD} - {title}.{ext}`, with the session id
-moved into document metadata (YAML frontmatter for markdown, an HTML
-comment/meta tag for HTML) rather than the filename. Re-export of the same
-session (matching id) overwrites; a different session colliding on date+title
-gets a numeric suffix.
+moved into document metadata (YAML frontmatter) rather than the filename.
+Re-export of the same session (matching id) overwrites; a different session
+colliding on date+title gets a numeric suffix.
 
-**Files:** `packages/protocol/src/messages.ts`, `packages/server/src/{session-manager,session-timestamps,connection,ws-transport}.ts`, `packages/plugin/src/{export-shared,export-markdown,export-html,export-writer,bridge-client,chat-view}.ts`.
+**Files:** `packages/protocol/src/messages.ts`, `packages/server/src/{session-manager,connection,ws-transport}.ts`, `packages/plugin/src/{export-shared,export-markdown,export-writer,bridge-client,chat-view}.ts`.
 
 ## TDL-20260708-009: Show thinking — request summarized reasoning (Opus redacts raw)
 
