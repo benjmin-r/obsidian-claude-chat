@@ -670,15 +670,19 @@ export class ChatView extends ItemView {
 		}
 	}
 
+	/**
+	 * Reset to a blank composer, but don't create a server-side session yet — that only
+	 * happens once the user actually sends a message (see dispatchSend's no-session
+	 * branch). Otherwise every "+" click left a message-less actor visible in the picker.
+	 */
 	private startNewSession(): void {
 		this.pickerOpen = false;
 		this.stickBottom = true;
-		this.applyDesiredMode = true;
+		this.pendingText = undefined;
 		this.currentTitle = undefined;
 		this.updateTabTitle();
 		this.dlog?.log("view", "startNewSession");
 		this.state = { ...initialState(this.selectedModel), connection: this.state.connection };
-		this.client.newSession(this.selectedModel);
 		this.render();
 	}
 
