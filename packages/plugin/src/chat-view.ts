@@ -4,6 +4,7 @@ import type ClaudeChatPlugin from "./main";
 import { BridgeClient, type WsLike } from "./bridge-client";
 import { DebugLog } from "./debug-log";
 import { FileSuggest } from "./file-suggest";
+import { truncateToolOutput } from "./export-shared";
 import { conversationLinkFromParts } from "./link-insert";
 import { MODEL_OPTIONS } from "./settings-types";
 import {
@@ -1454,8 +1455,7 @@ export class ChatView extends ItemView {
 		body.toggleClass("occ-hidden", !expanded);
 		if (inputStr) body.createEl("pre", { cls: "occ-tool-input", text: inputStr });
 		if (entry.result) {
-			const c = entry.result.content;
-			body.createEl("pre", { text: c.length > 8000 ? c.slice(0, 8000) + "\n…(truncated)" : c });
+			body.createEl("pre", { text: truncateToolOutput(entry.result.content) });
 		}
 
 		header.addEventListener("click", () => {

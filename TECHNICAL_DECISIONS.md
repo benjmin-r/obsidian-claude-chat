@@ -40,6 +40,97 @@ instead of hand-maintaining a parallel list.
 
 ---
 
+## TDL-20260820-012: Markdown export nests raw `<pre>` HTML, not fenced code, inside `<details>`
+
+**Date:** 2026-08-20
+**Status:** Implemented
+
+**Context:** TDL-20260820-010's plan flagged this as unconfirmed: "verify
+empirically that fenced code blocks nested inside `<details>` render correctly
+in Obsidian's reading view — expected to work but not yet confirmed." Confirmed,
+and it does **not** work as hoped: Obsidian (like other CommonMark-family
+renderers) treats content between raw HTML tags such as `<details>`/`<summary>`
+as an opaque HTML block, not markdown to re-parse — even with blank lines
+around a ` ``` ` fence, the fence rendered as literal text, not a code block,
+while the `<details>` collapsing itself worked fine (confirmed live in the
+vault by the user).
+
+**Decision:** `export-markdown.ts`'s `toolDetail`/`activityGroupBlock` emit
+escaped `<pre>${escapeHtml(...)}</pre>` for tool input/output and thinking
+text — raw HTML throughout the nested region, matching what `export-html.ts`
+already did — instead of ` ```json `/` ``` ` fences. No functional loss: content
+inside a raw HTML block was never going to get Obsidian's fenced-code syntax
+highlighting anyway, since that pipeline is tied to Obsidian's own fenced-code
+rendering, not to text sitting inside HTML dropped in via a raw block.
+
+**Files:** `packages/plugin/src/export-markdown.ts`.
+
+---
+
+## TDL-20260820-011: Extracted `occ-links.ts` — `link-insert.ts` wasn't actually Obsidian-free
+
+**Date:** 2026-08-20
+**Status:** Implemented
+
+**Context:** TDL-20260820-010's plan had `export-markdown.ts` reuse
+`conversationLinkFromParts` "from `link-insert.ts`, already exported/pure." It
+wasn't: `link-insert.ts` imports real Obsidian runtime classes (`EditorSuggest`,
+`FuzzySuggestModal`, `Notice`) at module scope, so importing anything from it —
+even a pure function — pulls that in too. This broke the fixture preview script
+(`scripts/render-export-fixtures.ts`), which runs under plain Node/`tsx` with no
+Obsidian runtime available (`Cannot find module 'obsidian'`).
+
+**Decision:** extracted `occChatUri`, `sessionLabel`, `conversationLinkFromParts`,
+`conversationLinkMarkdown`, `matchOccTrigger` into a new dependency-free
+`packages/plugin/src/occ-links.ts`. `link-insert.ts` now imports from it and
+re-exports the same names, so `main.ts`/`chat-view.ts`/existing tests are
+unaffected. `export-markdown.ts` imports directly from `occ-links.ts`.
+
+**Side effect:** with its pure logic moved out, `link-insert.ts` is now
+effectively a shell (`SessionCache`, `ConversationSuggest`, `SessionLinkModal`,
+`fetchSessions`'s WebSocket handling) — added to `jest.config.cjs`'s
+`collectCoverageFrom` exclusion alongside `chat-view.ts`/`main.ts`, matching
+AGENTS.md's existing shell-exclusion pattern rather than leaving it as a
+newly-introduced coverage regression.
+
+---
+
+## TDL-20260820-010: Conversation export — full-history round trip + hybrid timestamp backfill
+
+**Date:** 2026-08-20
+**Status:** Planned
+
+**Context:** Adding "Export to Markdown/HTML" actions that dump a session's
+**complete** transcript. The live view only ever holds a windowed transcript
+(`HISTORY_PAGE = 30`, `session-actor.ts:66`); looping `load_older` client-side
+to reconstruct everything would mean many serial round trips for a long
+session.
+
+**Decision 1 — new stateless round trip:** add `export_history` /
+`export_history_result` messages. Server-side, `SessionManager.loadFullHistory`
+calls the same `loadHistory` port + `mapHistoryMessages` that
+`resumeWithHistory` already uses internally, but with **no actor creation** —
+export is a one-off disk read, not a live session. One round trip instead of N.
+
+**Decision 2 — hybrid timestamp backfill:** the public `getSessionMessages`
+shape drops per-message timestamps, but its backing store
+(`~/.claude/projects/<hash(cwd)>/<sessionId>.jsonl`, confirmed by reading the
+SDK's bundled source and cross-checking real files) carries one per line. The
+project-dir hashing/fallback-matching is internal/undocumented, so we do NOT
+reimplement it for anything structural — `loadHistory`/`mapHistoryMessages`
+stays the sole source of truth for ordering/content/tool-pairing. Timestamps
+are a **best-effort side channel**: a separate raw-`.jsonl` read, keyed by
+message uuid, that returns `{}` on any failure (wrong path, missing file,
+malformed line) rather than throwing — the export never depends on it.
+
+**Decision 3 — filenames:** `{YYYYMMDD} - {title}.{ext}`, with the session id
+moved into document metadata (YAML frontmatter for markdown, an HTML
+comment/meta tag for HTML) rather than the filename. Re-export of the same
+session (matching id) overwrites; a different session colliding on date+title
+gets a numeric suffix.
+
+**Files:** `packages/protocol/src/messages.ts`, `packages/server/src/{session-manager,session-timestamps,connection,ws-transport}.ts`, `packages/plugin/src/{export-shared,export-markdown,export-html,export-writer,bridge-client,chat-view}.ts`.
+
 ## TDL-20260708-009: Show thinking — request summarized reasoning (Opus redacts raw)
 
 **Date:** 2026-07-08
