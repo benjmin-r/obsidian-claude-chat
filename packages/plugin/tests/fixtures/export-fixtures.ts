@@ -166,5 +166,8 @@ export const sampleMeta: ExportMeta = {
 	sessionId: "11111111-1111-4111-8111-111111111111",
 	title: "Sample export walkthrough",
 	model: "claude-sonnet-5",
+	// Deliberately on an EARLIER day than updatedAt, so tests exercise the
+	// filename using the session's start date, not its last-activity date.
+	createdAt: Date.parse("2026-08-16T09:15:00.000Z"),
 	updatedAt: Date.parse("2026-08-18T08:41:01.332Z"),
 };

@@ -17,7 +17,8 @@ const VAULT_ROOT = path.join(os.homedir(), "vaults", "benjamin");
 const EXPORT_FOLDER = "Claude Conversations";
 
 async function writeSample(meta: ExportMeta, content: string): Promise<void> {
-	const relPath = exportFilePath(EXPORT_FOLDER, false, meta.title, meta.updatedAt, "md");
+	// Filename date is the session's start (first message), not last activity — see export-shared.ts.
+	const relPath = exportFilePath(EXPORT_FOLDER, false, meta.title, meta.createdAt ?? meta.updatedAt, "md");
 	const fullPath = path.join(VAULT_ROOT, relPath);
 	await fs.mkdir(path.dirname(fullPath), { recursive: true });
 	await fs.writeFile(fullPath, content, "utf8");
@@ -26,12 +27,14 @@ async function writeSample(meta: ExportMeta, content: string): Promise<void> {
 
 async function main(): Promise<void> {
 	console.log(`Rendering ${scenarios.length} export scenarios into ${path.join(VAULT_ROOT, EXPORT_FOLDER)}\n`);
+	const now = Date.now();
 	for (const scenario of scenarios) {
 		const meta: ExportMeta = {
 			sessionId: `preview-${scenario.name}`,
 			title: scenario.title,
 			model: "claude-sonnet-5",
-			updatedAt: Date.now(),
+			createdAt: now - 2 * 60 * 60 * 1000, // conversation "started" 2h ago
+			updatedAt: now,
 		};
 		await writeSample(meta, renderMarkdown(scenario.items, meta));
 	}

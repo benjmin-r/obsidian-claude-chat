@@ -11,7 +11,9 @@ export interface ExportMeta {
 	sessionId: string;
 	title: string;
 	model: string;
-	/** epoch ms of last activity, if known — drives the filename date and doc metadata. */
+	/** epoch ms of the session's first message, if known — frontmatter `created`; also drives the filename date (see {@link exportFilePath}). */
+	createdAt?: number;
+	/** epoch ms of last activity, if known — frontmatter `updated`. */
 	updatedAt?: number;
 }
 
@@ -71,8 +73,8 @@ export function sanitizeFilename(title: string): string {
 	return capped || "Untitled session";
 }
 
-function dateParts(updatedAt: number | undefined): { yyyymmdd: string; yyyyMm: string } {
-	const d = updatedAt !== undefined ? new Date(updatedAt) : new Date();
+function dateParts(dateAt: number | undefined): { yyyymmdd: string; yyyyMm: string } {
+	const d = dateAt !== undefined ? new Date(dateAt) : new Date();
 	const y = d.getFullYear();
 	const m = String(d.getMonth() + 1).padStart(2, "0");
 	const day = String(d.getDate()).padStart(2, "0");
@@ -81,19 +83,22 @@ function dateParts(updatedAt: number | undefined): { yyyymmdd: string; yyyyMm: s
 
 /**
  * Date-led, human-readable export path: `{base}[/{YYYY-MM}]/{YYYYMMDD} - {title}.{ext}`.
- * The session id lives in the document's own metadata, not the filename (see
- * TDL-20260820-010) — collisions between two sessions sharing a date+title are
- * resolved by the caller (export-writer.ts) via `suffix`, appended here as ` (n)`.
+ * `dateAt` should be the session's START date (its first message), not its last
+ * activity — a conversation begun days ago and only just re-exported should keep
+ * its original date, not today's. The session id lives in the document's own
+ * metadata, not the filename (see TDL-20260820-010) — collisions between two
+ * sessions sharing a date+title are resolved by the caller (export-writer.ts)
+ * via `suffix`, appended here as ` (n)`.
  */
 export function exportFilePath(
 	base: string,
 	groupByMonth: boolean,
 	title: string,
-	updatedAt: number | undefined,
+	dateAt: number | undefined,
 	ext: string,
 	suffix?: number
 ): string {
-	const { yyyymmdd, yyyyMm } = dateParts(updatedAt);
+	const { yyyymmdd, yyyyMm } = dateParts(dateAt);
 	const folder = groupByMonth ? `${base}/${yyyyMm}` : base;
 	const suffixText = suffix && suffix > 1 ? ` (${suffix})` : "";
 	return `${folder}/${yyyymmdd} - ${sanitizeFilename(title)}${suffixText}.${ext}`;

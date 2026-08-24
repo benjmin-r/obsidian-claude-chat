@@ -1130,6 +1130,7 @@ export class ChatView extends ItemView {
 				sessionId,
 				title: title.trim() || "Untitled session",
 				model: summary?.model ?? this.selectedModel,
+				createdAt: summary?.createdAt,
 				updatedAt: summary?.updatedAt,
 			};
 			const events = await this.requestFullHistory(sessionId);

@@ -12,18 +12,20 @@ import {
 } from "./fixtures/export-fixtures";
 
 describe("renderMarkdown", () => {
-	it("emits YAML frontmatter carrying the session id, model, updated date, and title", () => {
+	it("emits YAML frontmatter carrying the session id, model, created/updated dates, and title", () => {
 		const out = renderMarkdown(plainQaFixture, sampleMeta);
 		expect(out.startsWith("---\n")).toBe(true);
 		expect(out).toContain(`session_id: ${sampleMeta.sessionId}`);
 		expect(out).toContain(`model: ${sampleMeta.model}`);
+		expect(out).toContain("created: 2026-08-16T09:15:00.000Z");
 		expect(out).toContain("updated: 2026-08-18T08:41:01.332Z");
 		expect(out).toContain(`title: "${sampleMeta.title}"`);
 	});
 
-	it("omits the updated field when updatedAt is absent", () => {
+	it("omits the created/updated fields when createdAt/updatedAt are absent", () => {
 		const meta: ExportMeta = { sessionId: "s1", title: "No date", model: "claude-sonnet-5" };
 		const out = renderMarkdown(plainQaFixture, meta);
+		expect(out).not.toContain("created:");
 		expect(out).not.toContain("updated:");
 	});
 

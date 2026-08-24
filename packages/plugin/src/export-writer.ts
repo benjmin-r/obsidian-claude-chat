@@ -65,7 +65,9 @@ export async function writeExportFile(
 	content: string
 ): Promise<string> {
 	for (let suffix = 1; ; suffix++) {
-		const path = exportFilePath(base, groupByMonth, meta.title, meta.updatedAt, "md", suffix);
+		// The filename date is the session's START (first message), falling back to
+		// last activity, then "now" — never the export time (see export-shared.ts).
+		const path = exportFilePath(base, groupByMonth, meta.title, meta.createdAt ?? meta.updatedAt, "md", suffix);
 		const existing = vault.getAbstractFileByPath(path);
 		if (!existing) {
 			await ensureFolder(vault, folderOf(path));

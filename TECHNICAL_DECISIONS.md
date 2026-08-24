@@ -6,6 +6,40 @@ Each entry is ≤200 words (longer when a hard-won investigation is worth preser
 
 ---
 
+## TDL-20260824-001: Conversation export — conversation-level created/updated timestamps; filename dated by session start
+
+**Date:** 2026-08-24
+**Status:** Implemented
+
+**Context:** TDL-20260821-014 dropped timestamps entirely, but that was about
+*per-message* timestamps rendered inline in the transcript body (the
+hybrid-backfill mechanism from TDL-20260820-010's Decision 2) — not worth it
+once seen rendered. Two *conversation-level* timestamps (when the session
+started, when it was last active) are a different, much cheaper ask: one
+number each, in frontmatter only, not a per-message map. Separately, the
+filename date had a real bug: it used `updatedAt` (last activity), so a
+long-running conversation re-exported today got today's date in the
+filename — reading as "date of export," not "date the conversation
+happened," despite the "date-led" filename scheme's intent (TDL-20260820-010
+Decision 3).
+
+**Decision:** the Agent SDK's public `listSessions()` already returns
+`createdAt` ("extracted from the first entry's timestamp") alongside the
+`lastModified` already used as `updatedAt` — no raw-`.jsonl` read needed,
+unlike the rejected per-message backfill. Threaded `createdAt` through
+`StoredSessionInfo` → `SessionSummary` → `ExportMeta`, the same
+merge-from-store path `title`/`archived` already use for active sessions.
+Frontmatter gains `created` (from `createdAt`) alongside the existing
+`updated`. `exportFilePath`'s date parameter (renamed `dateAt` from
+`updatedAt` — the name was misleading callers into passing the wrong field)
+is now fed `meta.createdAt ?? meta.updatedAt` by `export-writer.ts` and the
+preview script, so the filename reflects when the conversation started, with
+graceful fallback for sessions predating this field.
+
+**Files:** `packages/protocol/src/messages.ts`, `packages/server/src/{ports,sdk-adapter,session-manager}.ts`, `packages/plugin/src/{export-shared,export-markdown,export-writer,chat-view}.ts`, `packages/plugin/scripts/render-export-fixtures.ts`.
+
+---
+
 ## TDL-20260821-014: Conversation export — final Markdown-only format, timestamps dropped
 
 **Date:** 2026-08-21

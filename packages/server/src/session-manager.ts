@@ -318,7 +318,7 @@ export class SessionManager {
 
 	/** Active in-memory sessions merged with persisted ones from the store, newest first. */
 	async listSummaries(): Promise<SessionSummary[]> {
-		let stored: { sessionId: string; title: string; updatedAt: number; archived: boolean }[] = [];
+		let stored: { sessionId: string; title: string; updatedAt: number; createdAt?: number; archived: boolean }[] = [];
 		try {
 			stored = await this.deps.listStored(this.config.cwd);
 		} catch {
@@ -329,10 +329,11 @@ export class SessionManager {
 		// Active sessions keep their live status but borrow the stored title — an
 		// actor has no title of its own, so without this a resumed (active)
 		// session would display its UUID and a rename would never show. Same
-		// reasoning applies to the archived flag.
+		// reasoning applies to the archived flag and the first-message createdAt
+		// (an actor tracks last activity, not when the session started).
 		const active = this.list().map((a) => {
 			const info = storedById.get(a.sessionId);
-			return info ? { ...a, title: info.title, archived: info.archived } : a;
+			return info ? { ...a, title: info.title, archived: info.archived, createdAt: info.createdAt } : a;
 		});
 		const activeIds = new Set(active.map((s) => s.sessionId));
 
@@ -342,6 +343,7 @@ export class SessionManager {
 				sessionId: s.sessionId,
 				title: s.title,
 				model: this.config.defaultModel,
+				createdAt: s.createdAt,
 				status: "idle" as const,
 				cwd: this.config.cwd,
 				updatedAt: s.updatedAt,

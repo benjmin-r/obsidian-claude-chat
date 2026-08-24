@@ -100,4 +100,23 @@ describe("writeExportFile", () => {
 		const path = await writeExportFile(vault, "Claude Conversations", false, makeMeta("s1"), "content");
 		expect(path).toBe("Claude Conversations/20260818 - My Chat (2).md");
 	});
+
+	it("dates the filename by the session's start (createdAt), not its last activity (updatedAt)", async () => {
+		const { vault } = makeFakeVault();
+		const meta: ExportMeta = {
+			sessionId: "s1",
+			title: "My Chat",
+			model: "claude-sonnet-5",
+			createdAt: Date.parse("2026-08-01T09:00:00.000Z"), // conversation started here
+			updatedAt, // but was last touched on 2026-08-18
+		};
+		const path = await writeExportFile(vault, "Claude Conversations", false, meta, "content");
+		expect(path).toBe("Claude Conversations/20260801 - My Chat.md");
+	});
+
+	it("falls back to updatedAt for the filename date when createdAt is unknown", async () => {
+		const { vault } = makeFakeVault();
+		const path = await writeExportFile(vault, "Claude Conversations", false, makeMeta("s1"), "content");
+		expect(path).toBe("Claude Conversations/20260818 - My Chat.md");
+	});
 });

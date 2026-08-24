@@ -521,6 +521,23 @@ describe("SessionManager", () => {
 		);
 	});
 
+	it("listSummaries surfaces createdAt (first message) for active and stored-only sessions", async () => {
+		const { manager } = makeManager({
+			listStored: async () => [
+				{ sessionId: "resumed-1", title: "Live", updatedAt: 50, createdAt: 30, archived: false },
+				{ sessionId: "stored-only-1", title: "Stored", updatedAt: 10, createdAt: 5, archived: false },
+			],
+		});
+		await manager.resumeWithHistory("resumed-1"); // now active; still borrows createdAt from the store
+		const list = await manager.listSummaries();
+		expect(list).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ sessionId: "resumed-1", createdAt: 30 }),
+				expect.objectContaining({ sessionId: "stored-only-1", createdAt: 5 }),
+			])
+		);
+	});
+
 	it("deleteSession removes it from the store and drops the live actor", async () => {
 		const deleted: string[] = [];
 		const { fake, manager } = makeManager({

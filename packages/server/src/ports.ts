@@ -67,6 +67,8 @@ export interface StoredSessionInfo {
 	sessionId: string;
 	title: string;
 	updatedAt: number;
+	/** epoch ms of the first entry in the session's transcript, if known. */
+	createdAt?: number;
 	archived: boolean;
 }
 

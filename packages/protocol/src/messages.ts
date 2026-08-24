@@ -44,6 +44,8 @@ export interface SessionSummary {
 	cwd: string;
 	/** epoch ms of last activity, if known. */
 	updatedAt?: number;
+	/** epoch ms of the session's first message, if known. */
+	createdAt?: number;
 	messageCount?: number;
 	/** true when another client currently holds the writer role. */
 	hasWriter?: boolean;
