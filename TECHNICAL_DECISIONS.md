@@ -6,6 +6,34 @@ Each entry is ≤200 words (longer when a hard-won investigation is worth preser
 
 ---
 
+## TDL-20260825-001: Conversation export — frontmatter `conversation` link back to the live chat
+
+**Date:** 2026-08-25
+**Status:** Implemented
+
+**Context:** reverses a call made in TDL-20260821-014: "no link back to the
+conversation… don't replace it with anything… `session_id` in frontmatter is
+enough if a future feature wants to resolve back to the session
+programmatically." Explicit user request: jump directly from an exported note
+back into the live chat, as long as the session is still available on the
+server. Also means `export-markdown.ts` now DOES import from `occ-links.ts`,
+contrary to TDL-20260820-011's noted fact that it had no export-side caller.
+
+**Decision:** a `conversation` frontmatter field holding
+`occChatUri(sessionId)` (`obsidian://occ-chat?session=…`, already
+Obsidian-free/pure and unit-tested via `link-insert.test.ts`). Requested as
+"a wikilink," but a literal `[[wikilink]]` can't work here — Obsidian
+wikilinks resolve to vault notes by title, they can't invoke a custom
+protocol handler (`registerObsidianProtocolHandler`, `main.ts`), which
+requires an actual clicked `<a href="obsidian://…">`. Used a bare URI value
+instead, which Obsidian's Properties panel auto-linkifies — same
+click-to-jump outcome via the mechanism that already backs every other
+occ-chat link in this plugin, just not literal `[[…]]` syntax.
+
+**Files:** `packages/plugin/src/export-markdown.ts`.
+
+---
+
 ## TDL-20260824-001: Conversation export — conversation-level created/updated timestamps; filename dated by session start
 
 **Date:** 2026-08-24

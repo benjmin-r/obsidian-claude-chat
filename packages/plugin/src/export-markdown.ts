@@ -7,16 +7,25 @@
 
 import type { ActivityGroup, ActivityItem, DisplayItem, ToolEntry } from "./view-model";
 import { summarizeExportItem, truncateToolOutput, type ExportMeta } from "./export-shared";
+import { occChatUri } from "./occ-links";
 
 function yamlString(s: string): string {
 	return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
+/**
+ * Frontmatter's `conversation` field is a bare `obsidian://occ-chat?session=…`
+ * URI, not a `[[wikilink]]` — wikilinks only resolve to vault notes by title,
+ * they can't invoke a custom protocol handler. Obsidian's Properties panel
+ * auto-linkifies a bare URI in a text property, so this is still a single
+ * click to jump back into the live chat (as long as the session is still
+ * available on the server — see TDL-20260825-001).
+ */
 function frontmatter(meta: ExportMeta): string {
 	const lines = ["---", `session_id: ${meta.sessionId}`, `model: ${meta.model}`];
 	if (meta.createdAt !== undefined) lines.push(`created: ${new Date(meta.createdAt).toISOString()}`);
 	if (meta.updatedAt !== undefined) lines.push(`updated: ${new Date(meta.updatedAt).toISOString()}`);
-	lines.push(`title: ${yamlString(meta.title)}`, "---");
+	lines.push(`title: ${yamlString(meta.title)}`, `conversation: ${yamlString(occChatUri(meta.sessionId))}`, "---");
 	return lines.join("\n");
 }
 
@@ -80,10 +89,11 @@ function renderItem(item: DisplayItem): string {
 
 /**
  * Render a full transcript to Markdown: YAML frontmatter (`session_id`, `model`,
- * `created` — first message, `updated` — last message, `title`) followed
- * immediately by the turns/activity in order, each consecutive block separated
- * by a `---` divider. Joining via `.join("\n\n---\n\n")` rather than appending a
- * divider inside each block avoids a stray trailing rule after the last block.
+ * `created` — first message, `updated` — last message, `title`, `conversation`
+ * — a clickable `obsidian://` link back to the live chat) followed immediately
+ * by the turns/activity in order, each consecutive block separated by a `---`
+ * divider. Joining via `.join("\n\n---\n\n")` rather than appending a divider
+ * inside each block avoids a stray trailing rule after the last block.
  */
 export function renderMarkdown(items: DisplayItem[], meta: ExportMeta): string {
 	const body = items.map((item) => renderItem(item)).join("\n\n---\n\n");
