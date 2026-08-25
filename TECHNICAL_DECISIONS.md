@@ -6,6 +6,39 @@ Each entry is ≤200 words (longer when a hard-won investigation is worth preser
 
 ---
 
+## TDL-20260825-003: Conversation export — drop the `title` field; datetime frontmatter Obsidian actually recognizes
+
+**Date:** 2026-08-25
+**Status:** Implemented
+
+**Context:** two things noticed from real exported files. (1) `title` was
+redundant — the `conversation` field (TDL-20260825-001) already carries the
+title as the Markdown link's text, so a bare `title` frontmatter field
+duplicated it for no reason. (2) `created`/`updated` were written via
+`toISOString()` (`2026-08-11T15:13:38.173Z`) — Obsidian's frontmatter parser
+does **not** recognize this shape as its "Date & time" property type (it
+falls back to plain Text), because it doesn't match what Obsidian's own
+Date & time picker writes: local time, no milliseconds, no `Z` suffix
+(`2026-08-11T17:13:38`).
+
+**Decision:** removed the `title:` frontmatter line entirely. Added
+`isoLocal(ms)` (`export-markdown.ts`) — local-time `YYYY-MM-DDTHH:mm:ss`,
+built from `Date` getters the same way `export-shared.ts`'s `dateParts()`
+already does for the filename — and used it for both `created` and
+`updated` instead of `toISOString()`. Confirmed against Obsidian's actual
+behavior (not just inferred): a hand-edited file in this shape was
+recognized as a real datetime property, the unedited `toISOString()` shape
+was not.
+
+**Also documented (not fixed):** the pre-existing 50-most-recent-sessions
+cap (TDL-20260825-002's residual limit) was only recorded here in the TDL —
+not somewhere a user would ever see it. Added a bullet to
+`README.md`'s "Usage, resume & limitations" section.
+
+**Files:** `packages/plugin/src/export-markdown.ts`, `README.md`.
+
+---
+
 ## TDL-20260825-002: Conversation export — metadata must come from the server, not the client's session list
 
 **Date:** 2026-08-25

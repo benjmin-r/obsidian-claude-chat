@@ -11,18 +11,34 @@ import {
 	thinkingFixture,
 } from "./fixtures/export-fixtures";
 
+/** Mirrors export-markdown.ts's isoLocal — local `YYYY-MM-DDTHH:mm:ss`, the shape
+ * Obsidian's own Date & time property picker writes (unlike a Z/ms ISO string). */
+function localIso(ms: number): string {
+	const d = new Date(ms);
+	const pad = (n: number) => String(n).padStart(2, "0");
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 describe("renderMarkdown", () => {
-	it("emits YAML frontmatter carrying the session id, model, created/updated dates, title, and a conversation markdown link", () => {
+	it("emits YAML frontmatter carrying the session id, model, created/updated dates (local, Obsidian-datetime-recognized), and a conversation markdown link — no separate title field", () => {
 		const out = renderMarkdown(plainQaFixture, sampleMeta);
 		expect(out.startsWith("---\n")).toBe(true);
 		expect(out).toContain(`session_id: ${sampleMeta.sessionId}`);
 		expect(out).toContain(`model: ${sampleMeta.model}`);
-		expect(out).toContain("created: 2026-08-16T09:15:00.000Z");
-		expect(out).toContain("updated: 2026-08-18T08:41:01.332Z");
-		expect(out).toContain(`title: "${sampleMeta.title}"`);
+		expect(out).toContain(`created: ${localIso(sampleMeta.createdAt!)}`);
+		expect(out).toContain(`updated: ${localIso(sampleMeta.updatedAt!)}`);
+		expect(out).not.toMatch(/^title:/m);
 		expect(out).toContain(
 			`conversation: "[${sampleMeta.title}](obsidian://occ-chat?session=${sampleMeta.sessionId})"`
 		);
+	});
+
+	it("formats created/updated without milliseconds or a Z suffix (so Obsidian recognizes them as Date & time, not text)", () => {
+		const out = renderMarkdown(plainQaFixture, sampleMeta);
+		expect(out).toMatch(/created: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\n/);
+		expect(out).toMatch(/updated: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\n/);
+		expect(out).not.toMatch(/created: .*Z/);
+		expect(out).not.toMatch(/updated: .*Z/);
 	});
 
 	it("omits the created/updated fields when createdAt/updatedAt are absent, but still links the conversation", () => {

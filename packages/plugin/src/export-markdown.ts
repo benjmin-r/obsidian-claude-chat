@@ -14,23 +14,34 @@ function yamlString(s: string): string {
 }
 
 /**
+ * Local-time `YYYY-MM-DDTHH:mm:ss`, unquoted — the exact shape Obsidian's own
+ * "Date & time" property picker writes. A `Z`-suffixed/millisecond
+ * `toISOString()` value is NOT recognized as a datetime by Obsidian's
+ * frontmatter parser (it falls back to plain text), so `created`/`updated`
+ * use local time components instead, matching `export-shared.ts`'s
+ * `dateParts()` convention for the filename date.
+ */
+function isoLocal(ms: number): string {
+	const d = new Date(ms);
+	const pad = (n: number) => String(n).padStart(2, "0");
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/**
  * Frontmatter's `conversation` field is a real Markdown link
  * (`[title](obsidian://occ-chat?session=…)`), not a `[[wikilink]]` —
  * wikilinks only resolve to vault notes by title, they can't invoke a custom
  * protocol handler. Obsidian's Properties panel renders a Markdown link in a
  * text property as clickable, so this is still a single click to jump back
  * into the live chat (as long as the session is still available on the
- * server — see TDL-20260825-001/-002).
+ * server — see TDL-20260825-001/-002). No separate `title` field — the
+ * `conversation` link's text already carries it (TDL-20260825-003).
  */
 function frontmatter(meta: ExportMeta): string {
 	const lines = ["---", `session_id: ${meta.sessionId}`, `model: ${meta.model}`];
-	if (meta.createdAt !== undefined) lines.push(`created: ${new Date(meta.createdAt).toISOString()}`);
-	if (meta.updatedAt !== undefined) lines.push(`updated: ${new Date(meta.updatedAt).toISOString()}`);
-	lines.push(
-		`title: ${yamlString(meta.title)}`,
-		`conversation: ${yamlString(conversationLinkFromParts(meta.sessionId, meta.title))}`,
-		"---"
-	);
+	if (meta.createdAt !== undefined) lines.push(`created: ${isoLocal(meta.createdAt)}`);
+	if (meta.updatedAt !== undefined) lines.push(`updated: ${isoLocal(meta.updatedAt)}`);
+	lines.push(`conversation: ${yamlString(conversationLinkFromParts(meta.sessionId, meta.title))}`, "---");
 	return lines.join("\n");
 }
 
@@ -93,12 +104,12 @@ function renderItem(item: DisplayItem): string {
 }
 
 /**
- * Render a full transcript to Markdown: YAML frontmatter (`session_id`, `model`,
- * `created` — first message, `updated` — last message, `title`, `conversation`
- * — a clickable `obsidian://` link back to the live chat) followed immediately
- * by the turns/activity in order, each consecutive block separated by a `---`
- * divider. Joining via `.join("\n\n---\n\n")` rather than appending a divider
- * inside each block avoids a stray trailing rule after the last block.
+ * Render a full transcript to Markdown: YAML frontmatter (`session_id`,
+ * `model`, `created` — first message, `updated` — last message, `conversation`
+ * — a Markdown link with the title as its text, back to the live chat) followed
+ * immediately by the turns/activity in order, each consecutive block separated
+ * by a `---` divider. Joining via `.join("\n\n---\n\n")` rather than appending a
+ * divider inside each block avoids a stray trailing rule after the last block.
  */
 export function renderMarkdown(items: DisplayItem[], meta: ExportMeta): string {
 	const body = items.map((item) => renderItem(item)).join("\n\n---\n\n");
