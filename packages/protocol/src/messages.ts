@@ -226,6 +226,13 @@ export interface ExportHistoryResultEvent {
 	type: "export_history_result";
 	sessionId: string;
 	events: RenderEvent[];
+	/**
+	 * The session's current summary (model, title, timestamps), read fresh from
+	 * the store — NOT sourced from the client's own session list, which may
+	 * never have been populated (or be stale) for the exact session being
+	 * exported. Undefined only if the store lookup itself fails.
+	 */
+	summary?: SessionSummary;
 }
 
 /** Discriminated union of every server -> client frame. */

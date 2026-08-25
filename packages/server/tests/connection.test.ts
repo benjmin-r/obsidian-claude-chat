@@ -106,6 +106,38 @@ describe("Connection session flow", () => {
 		expect(sent).toContainEqual({ type: "export_history_result", sessionId: "sess-1", events: [] });
 	});
 
+	it("bundles the session's fresh summary into export_history_result, not left to the client's own list", async () => {
+		const fake = makeFakeQuery();
+		let n = 0;
+		const manager = new SessionManager(
+			{
+				runQuery: fake.runQuery,
+				now: () => 1,
+				newHandleId: () => `h${(n += 1)}`,
+				listStored: async () => [
+					{ sessionId: "sess-1", title: "Old chat", updatedAt: 5, createdAt: 1, archived: false },
+				],
+				loadHistory: async () => [],
+				renameStored: async () => undefined,
+				deleteStored: async () => undefined,
+				archiveStored: async () => undefined,
+			},
+			{ cwd: "/v", defaultModel: "m" }
+		);
+		const writers = createWriterRegistry();
+		const sent: BridgeEvent[] = [];
+		const conn = new Connection({ manager, token: "secret", writers, send: (e) => sent.push(e) });
+		conn.handle({ type: "hello", token: "secret" });
+		conn.handle({ type: "export_history", sessionId: "sess-1" });
+		await flush();
+		const result = sent.find((e) => e.type === "export_history_result");
+		expect(result).toMatchObject({
+			type: "export_history_result",
+			sessionId: "sess-1",
+			summary: { sessionId: "sess-1", title: "Old chat", createdAt: 1, updatedAt: 5 },
+		});
+	});
+
 	it("sends an error when export_history's loadHistory rejects", async () => {
 		const fake = makeFakeQuery();
 		let n = 0;

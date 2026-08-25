@@ -6,6 +6,42 @@ Each entry is ≤200 words (longer when a hard-won investigation is worth preser
 
 ---
 
+## TDL-20260825-002: Conversation export — metadata must come from the server, not the client's session list
+
+**Date:** 2026-08-25
+**Status:** Implemented
+
+**Context:** a real exported file showed the wrong model (the settings
+default, not the session's actual model) and was missing `created`/`updated`
+entirely, despite both being implemented (TDL-20260824-001). Root cause:
+`exportSession()` (`chat-view.ts`) looked up model/timestamps via
+`this.state.sessions.find(sessionId)` — a client-side cache populated ONLY by
+an explicit `list_sessions` round trip (opening the picker, a deep link).
+Exporting the CURRENTLY ATTACHED (toolbar) session doesn't guarantee that
+round trip ever happened for this view instance, or that it happened
+*after* this session's last update — so the lookup silently returned
+`undefined` and every field quietly fell back to a default. Confirmed live:
+`list_sessions` against the real server returned the correct data for the
+exact session that exported wrong, proving the server was never the problem.
+
+**Decision:** `export_history_result` (protocol) now carries an optional
+`summary: SessionSummary`, computed fresh by a new
+`SessionManager.getSessionSummary(sessionId)` (reuses `listSummaries()`'s
+active+stored merge, `.find()`s the one id) and sent alongside `events` in
+the same round trip (`connection.ts`'s `onExportHistory`, `Promise.all`).
+`chat-view.ts` no longer touches `this.state.sessions` for export at all —
+metadata now can't go stale independent of whatever the picker last fetched.
+
+**Residual known limit (not fixed here):** `listStored`'s underlying SDK call
+caps at the 50 most-recently-modified sessions; a session outside that
+window (very old, rarely touched, with 50+ more-recent siblings) would still
+resolve `summary` as `undefined`, falling back to the same defaults as
+before. Same limitation already exists for the regular session picker.
+
+**Files:** `packages/protocol/src/messages.ts`, `packages/server/src/{session-manager,connection}.ts`, `packages/plugin/src/chat-view.ts`.
+
+---
+
 ## TDL-20260825-001: Conversation export — frontmatter `conversation` link back to the live chat
 
 **Date:** 2026-08-25
@@ -20,15 +56,18 @@ server. Also means `export-markdown.ts` now DOES import from `occ-links.ts`,
 contrary to TDL-20260820-011's noted fact that it had no export-side caller.
 
 **Decision:** a `conversation` frontmatter field holding
-`occChatUri(sessionId)` (`obsidian://occ-chat?session=…`, already
-Obsidian-free/pure and unit-tested via `link-insert.test.ts`). Requested as
-"a wikilink," but a literal `[[wikilink]]` can't work here — Obsidian
-wikilinks resolve to vault notes by title, they can't invoke a custom
-protocol handler (`registerObsidianProtocolHandler`, `main.ts`), which
-requires an actual clicked `<a href="obsidian://…">`. Used a bare URI value
-instead, which Obsidian's Properties panel auto-linkifies — same
-click-to-jump outcome via the mechanism that already backs every other
-occ-chat link in this plugin, just not literal `[[…]]` syntax.
+`conversationLinkFromParts(sessionId, title)` — a real Markdown link,
+`[title](obsidian://occ-chat?session=…)` (already Obsidian-free/pure and
+unit-tested via `link-insert.test.ts`). Requested as "a wikilink," but a
+literal `[[wikilink]]` can't work here — Obsidian wikilinks resolve to vault
+notes by title, they can't invoke a custom protocol handler
+(`registerObsidianProtocolHandler`, `main.ts`), which requires an actual
+clicked `<a href="obsidian://…">`. **Revised same-day:** the first cut used a
+bare URI (`occChatUri(sessionId)` alone, relying on Obsidian's Properties
+panel to auto-linkify it); the user's own hand-edit of an exported file
+showed the wanted form is a real Markdown link with the title as link text,
+matching every other occ-chat link this plugin already produces — switched
+to `conversationLinkFromParts` accordingly.
 
 **Files:** `packages/plugin/src/export-markdown.ts`.
 

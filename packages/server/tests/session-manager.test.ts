@@ -121,6 +121,30 @@ describe("SessionManager", () => {
 		});
 	});
 
+	describe("getSessionSummary", () => {
+		it("resolves an active (in-memory) session's summary, merged with its stored fields", async () => {
+			const { manager } = makeManager({
+				listStored: async () => [{ sessionId: "sess-1", title: "Live", updatedAt: 50, createdAt: 10, archived: false }],
+			});
+			await manager.resumeWithHistory("sess-1");
+			const summary = await manager.getSessionSummary("sess-1");
+			expect(summary).toMatchObject({ sessionId: "sess-1", title: "Live", createdAt: 10, archived: false });
+		});
+
+		it("resolves a stored-only (not currently active) session's summary", async () => {
+			const { manager } = makeManager({
+				listStored: async () => [{ sessionId: "old-1", title: "Old", updatedAt: 5, createdAt: 1, archived: false }],
+			});
+			const summary = await manager.getSessionSummary("old-1");
+			expect(summary).toMatchObject({ sessionId: "old-1", title: "Old", createdAt: 1 });
+		});
+
+		it("resolves undefined for a session that is neither active nor stored", async () => {
+			const { manager } = makeManager({ listStored: async () => [] });
+			expect(await manager.getSessionSummary("ghost")).toBeUndefined();
+		});
+	});
+
 	it("resumeWithHistory checks CLI activity immediately so attach reflects read-only at once", async () => {
 		const { manager } = makeManager({
 			detectExternalActivity: () => ({ severity: "busy", pid: 5, entrypoint: "cli" }),

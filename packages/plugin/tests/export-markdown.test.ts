@@ -12,7 +12,7 @@ import {
 } from "./fixtures/export-fixtures";
 
 describe("renderMarkdown", () => {
-	it("emits YAML frontmatter carrying the session id, model, created/updated dates, title, and conversation link", () => {
+	it("emits YAML frontmatter carrying the session id, model, created/updated dates, title, and a conversation markdown link", () => {
 		const out = renderMarkdown(plainQaFixture, sampleMeta);
 		expect(out.startsWith("---\n")).toBe(true);
 		expect(out).toContain(`session_id: ${sampleMeta.sessionId}`);
@@ -20,7 +20,9 @@ describe("renderMarkdown", () => {
 		expect(out).toContain("created: 2026-08-16T09:15:00.000Z");
 		expect(out).toContain("updated: 2026-08-18T08:41:01.332Z");
 		expect(out).toContain(`title: "${sampleMeta.title}"`);
-		expect(out).toContain(`conversation: "obsidian://occ-chat?session=${sampleMeta.sessionId}"`);
+		expect(out).toContain(
+			`conversation: "[${sampleMeta.title}](obsidian://occ-chat?session=${sampleMeta.sessionId})"`
+		);
 	});
 
 	it("omits the created/updated fields when createdAt/updatedAt are absent, but still links the conversation", () => {
@@ -28,12 +30,13 @@ describe("renderMarkdown", () => {
 		const out = renderMarkdown(plainQaFixture, meta);
 		expect(out).not.toContain("created:");
 		expect(out).not.toContain("updated:");
-		expect(out).toContain('conversation: "obsidian://occ-chat?session=s1"');
+		expect(out).toContain('conversation: "[No date](obsidian://occ-chat?session=s1)"');
 	});
 
-	it("links back to the live chat with a bare URI, not a [[wikilink]] (wikilinks can't invoke a protocol handler)", () => {
+	it("links back to the live chat with a real markdown link, not a [[wikilink]] (wikilinks can't invoke a protocol handler)", () => {
 		const out = renderMarkdown(plainQaFixture, sampleMeta);
 		expect(out).not.toMatch(/conversation:.*\[\[/);
+		expect(out).toMatch(/conversation: "\[.*]\(obsidian:\/\/occ-chat\?session=/);
 	});
 
 	it("has no H1 heading or metadata line — the body starts immediately after frontmatter", () => {

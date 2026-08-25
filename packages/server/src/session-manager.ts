@@ -354,6 +354,18 @@ export class SessionManager {
 	}
 
 	/**
+	 * Look up ONE session's summary (active or stored), reusing `listSummaries`'s
+	 * merge logic. For callers (export) that need accurate model/title/timestamps
+	 * without assuming the client already has a fresh, complete session list —
+	 * it may never have fetched one, or fetched it before this session's last
+	 * update.
+	 */
+	async getSessionSummary(sessionId: string): Promise<SessionSummary | undefined> {
+		const summaries = await this.listSummaries();
+		return summaries.find((s) => s.sessionId === sessionId);
+	}
+
+	/**
 	 * Enforce the live-session cap before adding a new actor: evict the
 	 * least-recently-active idle, DETACHED actor to free its subprocess. Working,
 	 * awaiting-permission, and actively-viewed (client-attached) actors are never

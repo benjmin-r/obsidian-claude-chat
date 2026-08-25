@@ -7,25 +7,30 @@
 
 import type { ActivityGroup, ActivityItem, DisplayItem, ToolEntry } from "./view-model";
 import { summarizeExportItem, truncateToolOutput, type ExportMeta } from "./export-shared";
-import { occChatUri } from "./occ-links";
+import { conversationLinkFromParts } from "./occ-links";
 
 function yamlString(s: string): string {
 	return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
 /**
- * Frontmatter's `conversation` field is a bare `obsidian://occ-chat?session=…`
- * URI, not a `[[wikilink]]` — wikilinks only resolve to vault notes by title,
- * they can't invoke a custom protocol handler. Obsidian's Properties panel
- * auto-linkifies a bare URI in a text property, so this is still a single
- * click to jump back into the live chat (as long as the session is still
- * available on the server — see TDL-20260825-001).
+ * Frontmatter's `conversation` field is a real Markdown link
+ * (`[title](obsidian://occ-chat?session=…)`), not a `[[wikilink]]` —
+ * wikilinks only resolve to vault notes by title, they can't invoke a custom
+ * protocol handler. Obsidian's Properties panel renders a Markdown link in a
+ * text property as clickable, so this is still a single click to jump back
+ * into the live chat (as long as the session is still available on the
+ * server — see TDL-20260825-001/-002).
  */
 function frontmatter(meta: ExportMeta): string {
 	const lines = ["---", `session_id: ${meta.sessionId}`, `model: ${meta.model}`];
 	if (meta.createdAt !== undefined) lines.push(`created: ${new Date(meta.createdAt).toISOString()}`);
 	if (meta.updatedAt !== undefined) lines.push(`updated: ${new Date(meta.updatedAt).toISOString()}`);
-	lines.push(`title: ${yamlString(meta.title)}`, `conversation: ${yamlString(occChatUri(meta.sessionId))}`, "---");
+	lines.push(
+		`title: ${yamlString(meta.title)}`,
+		`conversation: ${yamlString(conversationLinkFromParts(meta.sessionId, meta.title))}`,
+		"---"
+	);
 	return lines.join("\n");
 }
 

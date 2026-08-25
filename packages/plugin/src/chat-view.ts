@@ -37,6 +37,12 @@ const PERMISSION_MODES: ReadonlyArray<{ mode: PermissionMode; label: string; ico
 	{ mode: "auto", label: "Auto — model decides", icon: "sparkles" },
 ];
 
+/** Resolved payload of a one-shot `export_history` round trip (see `requestFullHistory`). */
+interface ExportHistoryResult {
+	events: RenderEvent[];
+	summary?: SessionSummary;
+}
+
 /** Human-friendly text for a permission request's input (the bash command, or JSON). */
 function permissionInputText(input: unknown): string {
 	const cmd = (input as { command?: unknown })?.command;
@@ -70,7 +76,7 @@ export class ChatView extends ItemView {
 	/** true while a load_older requested by the deep-link resolver is in flight. */
 	private deepLinkLoading = false;
 	/** in-flight export_history requests, resolved/rejected from onEvent by sessionId. */
-	private readonly pendingExports = new Map<string, { resolve: (events: RenderEvent[]) => void; reject: (err: Error) => void }>();
+	private readonly pendingExports = new Map<string, { resolve: (result: ExportHistoryResult) => void; reject: (err: Error) => void }>();
 	/** last text dispatched to the server; used to roll back if the server blocks it. */
 	private lastSentText: string | undefined;
 
@@ -821,7 +827,7 @@ export class ChatView extends ItemView {
 	private onEvent(event: BridgeEvent): void {
 		this.state = applyEvent(this.state, event);
 		if (event.type === "export_history_result") {
-			this.pendingExports.get(event.sessionId)?.resolve(event.events);
+			this.pendingExports.get(event.sessionId)?.resolve({ events: event.events, summary: event.summary });
 			this.pendingExports.delete(event.sessionId);
 		}
 		if (event.type === "error" && event.sessionId && this.pendingExports.has(event.sessionId)) {
@@ -1096,16 +1102,16 @@ export class ChatView extends ItemView {
 	 * by onEvent on `export_history_result`, rejected on a matching `error` or
 	 * timeout.
 	 */
-	private requestFullHistory(sessionId: string, timeoutMs = 20000): Promise<RenderEvent[]> {
+	private requestFullHistory(sessionId: string, timeoutMs = 20000): Promise<ExportHistoryResult> {
 		return new Promise((resolve, reject) => {
 			const timer = window.setTimeout(() => {
 				this.pendingExports.delete(sessionId);
 				reject(new Error("Timed out waiting for the server."));
 			}, timeoutMs);
 			this.pendingExports.set(sessionId, {
-				resolve: (events) => {
+				resolve: (result) => {
 					window.clearTimeout(timer);
-					resolve(events);
+					resolve(result);
 				},
 				reject: (err) => {
 					window.clearTimeout(timer);
@@ -1122,10 +1128,16 @@ export class ChatView extends ItemView {
 	 * is a stateless disk read, independent of live-actor status. A currently
 	 * mid-turn session may miss its in-flight, not-yet-persisted turn (documented
 	 * limitation, see TDL-20260820-010).
+	 *
+	 * Metadata (model/timestamps) comes from the server's fresh `summary`, NOT
+	 * `this.state.sessions` — that client-side list is only populated by an
+	 * explicit `list_sessions` round trip (opening the picker, a deep link) and
+	 * can be empty or stale for the exact session being exported, producing a
+	 * wrong model and a missing created/updated (see TDL-20260825-002).
 	 */
 	private async exportSession(sessionId: string, title: string): Promise<void> {
 		try {
-			const summary = this.state.sessions.find((s) => s.sessionId === sessionId);
+			const { events, summary } = await this.requestFullHistory(sessionId);
 			const meta: ExportMeta = {
 				sessionId,
 				title: title.trim() || "Untitled session",
@@ -1133,7 +1145,6 @@ export class ChatView extends ItemView {
 				createdAt: summary?.createdAt,
 				updatedAt: summary?.updatedAt,
 			};
-			const events = await this.requestFullHistory(sessionId);
 			const items = groupActivity(events.reduce(applyEvent, initialState(meta.model)).items);
 			const path = await writeExportFile(
 				this.app.vault,
