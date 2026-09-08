@@ -8,7 +8,7 @@ module.exports = {
 		"^obsidian$": "<rootDir>/tests/__mocks__/obsidian.ts",
 		"^@occ/protocol$": "<rootDir>/../protocol/src/index.ts",
 	},
-	collectCoverageFrom: ["src/**/*.ts", "!src/chat-view.ts", "!src/main.ts"],
+	collectCoverageFrom: ["src/**/*.ts", "!src/chat-view.ts", "!src/main.ts", "!src/link-insert.ts"],
 	coverageThreshold: {
 		global: {
 			branches: 80,

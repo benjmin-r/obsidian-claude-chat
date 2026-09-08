@@ -44,6 +44,8 @@ export interface SessionSummary {
 	cwd: string;
 	/** epoch ms of last activity, if known. */
 	updatedAt?: number;
+	/** epoch ms of the session's first message, if known. */
+	createdAt?: number;
 	messageCount?: number;
 	/** true when another client currently holds the writer role. */
 	hasWriter?: boolean;
@@ -214,6 +216,25 @@ export interface HistoryPageEvent {
 	hasMore: boolean;
 }
 
+/**
+ * The complete transcript of a session, in one shot (reply to `export_history`).
+ * A bulk result, not a stream primitive — deliberately excluded from
+ * {@link RenderEvent} so it falls through `applyEvent`'s `default: return state`
+ * unnoticed if it ever reaches the view-model reducer.
+ */
+export interface ExportHistoryResultEvent {
+	type: "export_history_result";
+	sessionId: string;
+	events: RenderEvent[];
+	/**
+	 * The session's current summary (model, title, timestamps), read fresh from
+	 * the store — NOT sourced from the client's own session list, which may
+	 * never have been populated (or be stale) for the exact session being
+	 * exported. Undefined only if the store lookup itself fails.
+	 */
+	summary?: SessionSummary;
+}
+
 /** Discriminated union of every server -> client frame. */
 export type BridgeEvent =
 	| ReadyEvent
@@ -233,7 +254,8 @@ export type BridgeEvent =
 	| AttachResetEvent
 	| ExternalActivityEvent
 	| SendBlockedEvent
-	| HistoryPageEvent;
+	| HistoryPageEvent
+	| ExportHistoryResultEvent;
 
 /** The subset of BridgeEvents that are derived purely from SDK stream messages. */
 export type RenderEvent =
@@ -340,6 +362,17 @@ export interface ListSessionsMessage {
 	type: "list_sessions";
 }
 
+/**
+ * Request a session's COMPLETE transcript in one shot — a stateless disk read
+ * that bypasses the windowed live-actor paging (`load_older`) entirely, so it
+ * works uniformly for the attached session and any other stored session
+ * regardless of live-actor status. See TDL-20260820-010.
+ */
+export interface ExportHistoryMessage {
+	type: "export_history";
+	sessionId: string;
+}
+
 /** Liveness probe; the server replies with `pong`. */
 export interface PingMessage {
 	type: "ping";
@@ -360,4 +393,5 @@ export type ClientMessage =
 	| SetPermissionModeMessage
 	| LoadOlderMessage
 	| ListSessionsMessage
+	| ExportHistoryMessage
 	| PingMessage;

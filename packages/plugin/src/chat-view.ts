@@ -1,9 +1,12 @@
-import { App, ItemView, MarkdownRenderer, Menu, Modal, Notice, Platform, setIcon, type WorkspaceLeaf } from "obsidian";
-import type { BridgeEvent, PermissionMode, SessionSummary } from "@occ/protocol";
+import { App, ItemView, MarkdownRenderer, Menu, Modal, normalizePath, Notice, Platform, setIcon, type WorkspaceLeaf } from "obsidian";
+import type { BridgeEvent, PermissionMode, RenderEvent, SessionSummary } from "@occ/protocol";
 import type ClaudeChatPlugin from "./main";
 import { BridgeClient, type WsLike } from "./bridge-client";
 import { DebugLog } from "./debug-log";
 import { FileSuggest } from "./file-suggest";
+import { renderMarkdown } from "./export-markdown";
+import { truncateToolOutput, type ExportMeta } from "./export-shared";
+import { writeExportFile } from "./export-writer";
 import { conversationLinkFromParts } from "./link-insert";
 import { MODEL_OPTIONS } from "./settings-types";
 import {
@@ -33,6 +36,12 @@ const PERMISSION_MODES: ReadonlyArray<{ mode: PermissionMode; label: string; ico
 	{ mode: "acceptEdits", label: "Auto-accept edits", icon: "pencil" },
 	{ mode: "auto", label: "Auto — model decides", icon: "sparkles" },
 ];
+
+/** Resolved payload of a one-shot `export_history` round trip (see `requestFullHistory`). */
+interface ExportHistoryResult {
+	events: RenderEvent[];
+	summary?: SessionSummary;
+}
 
 /** Human-friendly text for a permission request's input (the bash command, or JSON). */
 function permissionInputText(input: unknown): string {
@@ -66,6 +75,8 @@ export class ChatView extends ItemView {
 	private pendingScrollTo: string | undefined;
 	/** true while a load_older requested by the deep-link resolver is in flight. */
 	private deepLinkLoading = false;
+	/** in-flight export_history requests, resolved/rejected from onEvent by sessionId. */
+	private readonly pendingExports = new Map<string, { resolve: (result: ExportHistoryResult) => void; reject: (err: Error) => void }>();
 	/** last text dispatched to the server; used to roll back if the server blocks it. */
 	private lastSentText: string | undefined;
 
@@ -669,15 +680,19 @@ export class ChatView extends ItemView {
 		}
 	}
 
+	/**
+	 * Reset to a blank composer, but don't create a server-side session yet — that only
+	 * happens once the user actually sends a message (see dispatchSend's no-session
+	 * branch). Otherwise every "+" click left a message-less actor visible in the picker.
+	 */
 	private startNewSession(): void {
 		this.pickerOpen = false;
 		this.stickBottom = true;
-		this.applyDesiredMode = true;
+		this.pendingText = undefined;
 		this.currentTitle = undefined;
 		this.updateTabTitle();
 		this.dlog?.log("view", "startNewSession");
 		this.state = { ...initialState(this.selectedModel), connection: this.state.connection };
-		this.client.newSession(this.selectedModel);
 		this.render();
 	}
 
@@ -811,6 +826,14 @@ export class ChatView extends ItemView {
 
 	private onEvent(event: BridgeEvent): void {
 		this.state = applyEvent(this.state, event);
+		if (event.type === "export_history_result") {
+			this.pendingExports.get(event.sessionId)?.resolve({ events: event.events, summary: event.summary });
+			this.pendingExports.delete(event.sessionId);
+		}
+		if (event.type === "error" && event.sessionId && this.pendingExports.has(event.sessionId)) {
+			this.pendingExports.get(event.sessionId)?.reject(new Error(event.message));
+			this.pendingExports.delete(event.sessionId);
+		}
 		if (event.type === "send_blocked") {
 			this.restoreBlockedDraft();
 			return; // restoreBlockedDraft re-renders
@@ -1043,6 +1066,12 @@ export class ChatView extends ItemView {
 		);
 		menu.addItem((i) =>
 			i
+				.setTitle("Export to Markdown")
+				.setIcon("file-text")
+				.onClick(() => void this.exportSession(sessionId, currentTitle))
+		);
+		menu.addItem((i) =>
+			i
 				.setTitle("Copy resume command & close session")
 				.setIcon("terminal")
 				.onClick(() => {
@@ -1065,6 +1094,70 @@ export class ChatView extends ItemView {
 		);
 		menu.addItem((i) => i.setTitle("Delete…").setIcon("trash-2").onClick(() => this.confirmDelete(sessionId, label)));
 		menu.showAtMouseEvent(evt);
+	}
+
+	/**
+	 * One-shot full-history fetch over the persistent chat socket — bypasses the
+	 * windowed live transcript (`load_older`'s 30-event paging) entirely. Resolved
+	 * by onEvent on `export_history_result`, rejected on a matching `error` or
+	 * timeout.
+	 */
+	private requestFullHistory(sessionId: string, timeoutMs = 20000): Promise<ExportHistoryResult> {
+		return new Promise((resolve, reject) => {
+			const timer = window.setTimeout(() => {
+				this.pendingExports.delete(sessionId);
+				reject(new Error("Timed out waiting for the server."));
+			}, timeoutMs);
+			this.pendingExports.set(sessionId, {
+				resolve: (result) => {
+					window.clearTimeout(timer);
+					resolve(result);
+				},
+				reject: (err) => {
+					window.clearTimeout(timer);
+					reject(err);
+				},
+			});
+			this.client.exportHistory(sessionId);
+		});
+	}
+
+	/**
+	 * Export a session's complete transcript to a Markdown note in the vault.
+	 * Works uniformly for the current session and any picker-row session — export
+	 * is a stateless disk read, independent of live-actor status. A currently
+	 * mid-turn session may miss its in-flight, not-yet-persisted turn (documented
+	 * limitation, see TDL-20260820-010).
+	 *
+	 * Metadata (model/timestamps) comes from the server's fresh `summary`, NOT
+	 * `this.state.sessions` — that client-side list is only populated by an
+	 * explicit `list_sessions` round trip (opening the picker, a deep link) and
+	 * can be empty or stale for the exact session being exported, producing a
+	 * wrong model and a missing created/updated (see TDL-20260825-002).
+	 */
+	private async exportSession(sessionId: string, title: string): Promise<void> {
+		try {
+			const { events, summary } = await this.requestFullHistory(sessionId);
+			const meta: ExportMeta = {
+				sessionId,
+				title: title.trim() || "Untitled session",
+				model: summary?.model ?? this.selectedModel,
+				createdAt: summary?.createdAt,
+				updatedAt: summary?.updatedAt,
+			};
+			const items = groupActivity(events.reduce(applyEvent, initialState(meta.model)).items);
+			const path = await writeExportFile(
+				this.app.vault,
+				normalizePath(this.plugin.settings.exportFolder),
+				this.plugin.settings.exportGroupByMonth,
+				meta,
+				renderMarkdown(items, meta)
+			);
+			new Notice(`Exported to ${path}`, 3000);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			new Notice(`Export failed: ${message}`, 5000);
+		}
 	}
 
 	/**
@@ -1454,8 +1547,7 @@ export class ChatView extends ItemView {
 		body.toggleClass("occ-hidden", !expanded);
 		if (inputStr) body.createEl("pre", { cls: "occ-tool-input", text: inputStr });
 		if (entry.result) {
-			const c = entry.result.content;
-			body.createEl("pre", { text: c.length > 8000 ? c.slice(0, 8000) + "\n…(truncated)" : c });
+			body.createEl("pre", { text: truncateToolOutput(entry.result.content) });
 		}
 
 		header.addEventListener("click", () => {

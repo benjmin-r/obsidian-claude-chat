@@ -96,6 +96,55 @@ describe("SessionManager", () => {
 		});
 	});
 
+	describe("loadFullHistory", () => {
+		it("maps stored messages to render events without creating an actor", async () => {
+			const { manager } = makeManager({
+				loadHistory: async () => [
+					{ type: "user", message: { content: "earlier question" } },
+					{ type: "assistant", message: { content: [{ type: "text", text: "earlier answer" }] } },
+				],
+			});
+			const events = await manager.loadFullHistory("sess-1");
+			expect(events.some((e) => e.type === "user_echo" && e.text === "earlier question")).toBe(true);
+			expect(events.some((e) => e.type === "assistant_text_delta" && e.text === "earlier answer")).toBe(true);
+			expect(manager.get("sess-1")).toBeUndefined();
+			expect(manager.list()).toHaveLength(0);
+		});
+
+		it("propagates a loadHistory rejection", async () => {
+			const { manager } = makeManager({
+				loadHistory: async () => {
+					throw new Error("disk read failed");
+				},
+			});
+			await expect(manager.loadFullHistory("sess-1")).rejects.toThrow("disk read failed");
+		});
+	});
+
+	describe("getSessionSummary", () => {
+		it("resolves an active (in-memory) session's summary, merged with its stored fields", async () => {
+			const { manager } = makeManager({
+				listStored: async () => [{ sessionId: "sess-1", title: "Live", updatedAt: 50, createdAt: 10, archived: false }],
+			});
+			await manager.resumeWithHistory("sess-1");
+			const summary = await manager.getSessionSummary("sess-1");
+			expect(summary).toMatchObject({ sessionId: "sess-1", title: "Live", createdAt: 10, archived: false });
+		});
+
+		it("resolves a stored-only (not currently active) session's summary", async () => {
+			const { manager } = makeManager({
+				listStored: async () => [{ sessionId: "old-1", title: "Old", updatedAt: 5, createdAt: 1, archived: false }],
+			});
+			const summary = await manager.getSessionSummary("old-1");
+			expect(summary).toMatchObject({ sessionId: "old-1", title: "Old", createdAt: 1 });
+		});
+
+		it("resolves undefined for a session that is neither active nor stored", async () => {
+			const { manager } = makeManager({ listStored: async () => [] });
+			expect(await manager.getSessionSummary("ghost")).toBeUndefined();
+		});
+	});
+
 	it("resumeWithHistory checks CLI activity immediately so attach reflects read-only at once", async () => {
 		const { manager } = makeManager({
 			detectExternalActivity: () => ({ severity: "busy", pid: 5, entrypoint: "cli" }),
@@ -492,6 +541,23 @@ describe("SessionManager", () => {
 			expect.arrayContaining([
 				expect.objectContaining({ sessionId: "resumed-1", archived: true }),
 				expect.objectContaining({ sessionId: "stored-only-1", archived: true }),
+			])
+		);
+	});
+
+	it("listSummaries surfaces createdAt (first message) for active and stored-only sessions", async () => {
+		const { manager } = makeManager({
+			listStored: async () => [
+				{ sessionId: "resumed-1", title: "Live", updatedAt: 50, createdAt: 30, archived: false },
+				{ sessionId: "stored-only-1", title: "Stored", updatedAt: 10, createdAt: 5, archived: false },
+			],
+		});
+		await manager.resumeWithHistory("resumed-1"); // now active; still borrows createdAt from the store
+		const list = await manager.listSummaries();
+		expect(list).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ sessionId: "resumed-1", createdAt: 30 }),
+				expect.objectContaining({ sessionId: "stored-only-1", createdAt: 5 }),
 			])
 		);
 	});

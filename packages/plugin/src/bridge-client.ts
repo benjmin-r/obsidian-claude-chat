@@ -195,6 +195,11 @@ export class BridgeClient {
 		this.send({ type: "load_older", sessionId });
 	}
 
+	/** One-shot request for a session's complete transcript (used by conversation export). */
+	exportHistory(sessionId: string): void {
+		this.send({ type: "export_history", sessionId });
+	}
+
 	setPermissionMode(sessionId: string, mode: PermissionMode): void {
 		this.send({ type: "set_permission_mode", sessionId, mode });
 	}

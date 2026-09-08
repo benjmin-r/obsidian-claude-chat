@@ -144,6 +144,12 @@ from the ribbon (message icon) or the *Open Claude chat* command.
 - The **server must stay running** for sessions to be live. Vault edits the agent
   makes converge to your other devices via your normal file sync (Obsidian Sync,
   etc.) — this project does not sync files itself.
+- **Session list is capped at 50:** the session picker and **Export to Markdown**
+  both resolve sessions via the same underlying store query, which only returns
+  the 50 most-recently-modified sessions. A session outside that window (very
+  old, rarely touched, with 50+ more-recently-updated siblings) won't appear in
+  the picker, and exporting it anyway (e.g. via a saved deep link) will produce
+  a file missing its model/`created`/`updated` frontmatter.
 
 ## CLI interoperability & locking
 

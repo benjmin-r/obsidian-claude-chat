@@ -81,6 +81,7 @@ export const listStored: ListStored = async (cwd) => {
 		sessionId: s.sessionId,
 		title: (s.customTitle || s.summary || s.firstPrompt || s.sessionId).trim(),
 		updatedAt: s.lastModified,
+		createdAt: s.createdAt,
 		archived: s.tag === "archived",
 	}));
 };

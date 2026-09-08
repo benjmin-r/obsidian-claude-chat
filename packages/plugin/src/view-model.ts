@@ -32,7 +32,7 @@ export type ChatItem =
 	| { kind: "tool"; entry: ToolEntry }
 	| { kind: "error"; text: string };
 
-type ActivityItem = Extract<ChatItem, { kind: "thinking" | "tool" }>;
+export type ActivityItem = Extract<ChatItem, { kind: "thinking" | "tool" }>;
 
 /** A run of consecutive tool/thinking items, collapsed to one row in the transcript. */
 export interface ActivityGroup {

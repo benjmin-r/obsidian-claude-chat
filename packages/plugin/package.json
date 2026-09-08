@@ -7,7 +7,8 @@
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"test": "jest",
-		"test:coverage": "jest --coverage"
+		"test:coverage": "jest --coverage",
+		"export:preview": "tsx scripts/render-export-fixtures.ts"
 	},
 	"dependencies": {
 		"@occ/protocol": "0.1.0"
@@ -20,6 +21,7 @@
 		"jest-environment-jsdom": "^30.2.0",
 		"obsidian": "latest",
 		"ts-jest": "^29.1.0",
+		"tsx": "^4.23.12",
 		"typescript": "^5.8.3"
 	},
 	"license": "MIT"

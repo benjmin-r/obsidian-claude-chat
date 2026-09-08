@@ -27,6 +27,10 @@ describe("parseClientMessage", () => {
 			sessionId: "s",
 			mode: "acceptEdits",
 		});
+		expect(parseClientMessage('{"type":"export_history","sessionId":"s"}')).toEqual({
+			type: "export_history",
+			sessionId: "s",
+		});
 	});
 
 	it("rejects non-JSON", () => {

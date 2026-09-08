@@ -6,7 +6,7 @@
  * still hold the provisional id keep resolving to the same actor.
  */
 
-import { mapHistoryMessages, type PermissionMode, type SessionSummary } from "@occ/protocol";
+import { mapHistoryMessages, type PermissionMode, type RenderEvent, type SessionSummary } from "@occ/protocol";
 import { SessionActor, type SessionActorDeps } from "./session-actor";
 import type { ArchiveStored, DeleteStored, DetectExternalActivity, ListStored, LoadHistory, RenameStored } from "./ports";
 
@@ -247,6 +247,18 @@ export class SessionManager {
 	}
 
 	/**
+	 * Read a session's COMPLETE transcript in one shot: no actor creation, no
+	 * replay buffer, no writer-claim — export is a one-off bulk read of a
+	 * possibly-idle or already-reaped session, not a live attach. Reads directly
+	 * from disk, so a currently mid-turn session may miss its not-yet-persisted
+	 * in-flight turn (documented limitation, see TDL-20260820-010).
+	 */
+	async loadFullHistory(sessionId: string): Promise<RenderEvent[]> {
+		const messages = await this.deps.loadHistory(this.config.cwd, sessionId);
+		return mapHistoryMessages(messages, sessionId);
+	}
+
+	/**
 	 * Attach to a session for a (re)connecting client: return the live actor if it is
 	 * still in memory, else resume it from the CLI store — but ONLY if it actually
 	 * exists there. Returns undefined for a genuinely unknown id.
@@ -306,7 +318,7 @@ export class SessionManager {
 
 	/** Active in-memory sessions merged with persisted ones from the store, newest first. */
 	async listSummaries(): Promise<SessionSummary[]> {
-		let stored: { sessionId: string; title: string; updatedAt: number; archived: boolean }[] = [];
+		let stored: { sessionId: string; title: string; updatedAt: number; createdAt?: number; archived: boolean }[] = [];
 		try {
 			stored = await this.deps.listStored(this.config.cwd);
 		} catch {
@@ -317,10 +329,11 @@ export class SessionManager {
 		// Active sessions keep their live status but borrow the stored title — an
 		// actor has no title of its own, so without this a resumed (active)
 		// session would display its UUID and a rename would never show. Same
-		// reasoning applies to the archived flag.
+		// reasoning applies to the archived flag and the first-message createdAt
+		// (an actor tracks last activity, not when the session started).
 		const active = this.list().map((a) => {
 			const info = storedById.get(a.sessionId);
-			return info ? { ...a, title: info.title, archived: info.archived } : a;
+			return info ? { ...a, title: info.title, archived: info.archived, createdAt: info.createdAt } : a;
 		});
 		const activeIds = new Set(active.map((s) => s.sessionId));
 
@@ -330,6 +343,7 @@ export class SessionManager {
 				sessionId: s.sessionId,
 				title: s.title,
 				model: this.config.defaultModel,
+				createdAt: s.createdAt,
 				status: "idle" as const,
 				cwd: this.config.cwd,
 				updatedAt: s.updatedAt,
@@ -337,6 +351,18 @@ export class SessionManager {
 			}));
 
 		return [...active, ...storedOnly].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+	}
+
+	/**
+	 * Look up ONE session's summary (active or stored), reusing `listSummaries`'s
+	 * merge logic. For callers (export) that need accurate model/title/timestamps
+	 * without assuming the client already has a fresh, complete session list —
+	 * it may never have fetched one, or fetched it before this session's last
+	 * update.
+	 */
+	async getSessionSummary(sessionId: string): Promise<SessionSummary | undefined> {
+		const summaries = await this.listSummaries();
+		return summaries.find((s) => s.sessionId === sessionId);
 	}
 
 	/**

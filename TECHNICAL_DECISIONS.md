@@ -6,6 +6,172 @@ Each entry is ≤200 words (longer when a hard-won investigation is worth preser
 
 ---
 
+## TDL-20260825-003: Conversation export — drop the `title` field; datetime frontmatter Obsidian actually recognizes
+
+**Date:** 2026-08-25
+**Status:** Implemented
+
+**Context:** two things noticed from real exported files. (1) `title` was
+redundant — the `conversation` field (TDL-20260825-001) already carries the
+title as the Markdown link's text, so a bare `title` frontmatter field
+duplicated it for no reason. (2) `created`/`updated` were written via
+`toISOString()` (`2026-08-11T15:13:38.173Z`) — Obsidian's frontmatter parser
+does **not** recognize this shape as its "Date & time" property type (it
+falls back to plain Text), because it doesn't match what Obsidian's own
+Date & time picker writes: local time, no milliseconds, no `Z` suffix
+(`2026-08-11T17:13:38`).
+
+**Decision:** removed the `title:` frontmatter line entirely. Added
+`isoLocal(ms)` (`export-markdown.ts`) — local-time `YYYY-MM-DDTHH:mm:ss`,
+built from `Date` getters the same way `export-shared.ts`'s `dateParts()`
+already does for the filename — and used it for both `created` and
+`updated` instead of `toISOString()`. Confirmed against Obsidian's actual
+behavior (not just inferred): a hand-edited file in this shape was
+recognized as a real datetime property, the unedited `toISOString()` shape
+was not.
+
+**Also documented (not fixed):** the pre-existing 50-most-recent-sessions
+cap (TDL-20260825-002's residual limit) was only recorded here in the TDL —
+not somewhere a user would ever see it. Added a bullet to
+`README.md`'s "Usage, resume & limitations" section.
+
+**Files:** `packages/plugin/src/export-markdown.ts`, `README.md`.
+
+---
+
+## TDL-20260825-002: Conversation export — metadata must come from the server, not the client's session list
+
+**Date:** 2026-08-25
+**Status:** Implemented
+
+**Context:** a real exported file showed the wrong model (the settings
+default, not the session's actual model) and was missing `created`/`updated`
+entirely, despite both being implemented (TDL-20260824-001). Root cause:
+`exportSession()` (`chat-view.ts`) looked up model/timestamps via
+`this.state.sessions.find(sessionId)` — a client-side cache populated ONLY by
+an explicit `list_sessions` round trip (opening the picker, a deep link).
+Exporting the CURRENTLY ATTACHED (toolbar) session doesn't guarantee that
+round trip ever happened for this view instance, or that it happened
+*after* this session's last update — so the lookup silently returned
+`undefined` and every field quietly fell back to a default. Confirmed live:
+`list_sessions` against the real server returned the correct data for the
+exact session that exported wrong, proving the server was never the problem.
+
+**Decision:** `export_history_result` (protocol) now carries an optional
+`summary: SessionSummary`, computed fresh by a new
+`SessionManager.getSessionSummary(sessionId)` (reuses `listSummaries()`'s
+active+stored merge, `.find()`s the one id) and sent alongside `events` in
+the same round trip (`connection.ts`'s `onExportHistory`, `Promise.all`).
+`chat-view.ts` no longer touches `this.state.sessions` for export at all —
+metadata now can't go stale independent of whatever the picker last fetched.
+
+**Residual known limit (not fixed here):** `listStored`'s underlying SDK call
+caps at the 50 most-recently-modified sessions; a session outside that
+window (very old, rarely touched, with 50+ more-recent siblings) would still
+resolve `summary` as `undefined`, falling back to the same defaults as
+before. Same limitation already exists for the regular session picker.
+
+**Files:** `packages/protocol/src/messages.ts`, `packages/server/src/{session-manager,connection}.ts`, `packages/plugin/src/chat-view.ts`.
+
+---
+
+## TDL-20260825-001: Conversation export — frontmatter `conversation` link back to the live chat
+
+**Date:** 2026-08-25
+**Status:** Implemented
+
+**Context:** reverses a call made in TDL-20260821-014: "no link back to the
+conversation… don't replace it with anything… `session_id` in frontmatter is
+enough if a future feature wants to resolve back to the session
+programmatically." Explicit user request: jump directly from an exported note
+back into the live chat, as long as the session is still available on the
+server. Also means `export-markdown.ts` now DOES import from `occ-links.ts`,
+contrary to TDL-20260820-011's noted fact that it had no export-side caller.
+
+**Decision:** a `conversation` frontmatter field holding
+`conversationLinkFromParts(sessionId, title)` — a real Markdown link,
+`[title](obsidian://occ-chat?session=…)` (already Obsidian-free/pure and
+unit-tested via `link-insert.test.ts`). Requested as "a wikilink," but a
+literal `[[wikilink]]` can't work here — Obsidian wikilinks resolve to vault
+notes by title, they can't invoke a custom protocol handler
+(`registerObsidianProtocolHandler`, `main.ts`), which requires an actual
+clicked `<a href="obsidian://…">`. **Revised same-day:** the first cut used a
+bare URI (`occChatUri(sessionId)` alone, relying on Obsidian's Properties
+panel to auto-linkify it); the user's own hand-edit of an exported file
+showed the wanted form is a real Markdown link with the title as link text,
+matching every other occ-chat link this plugin already produces — switched
+to `conversationLinkFromParts` accordingly.
+
+**Files:** `packages/plugin/src/export-markdown.ts`.
+
+---
+
+## TDL-20260824-001: Conversation export — conversation-level created/updated timestamps; filename dated by session start
+
+**Date:** 2026-08-24
+**Status:** Implemented
+
+**Context:** TDL-20260821-014 dropped timestamps entirely, but that was about
+*per-message* timestamps rendered inline in the transcript body (the
+hybrid-backfill mechanism from TDL-20260820-010's Decision 2) — not worth it
+once seen rendered. Two *conversation-level* timestamps (when the session
+started, when it was last active) are a different, much cheaper ask: one
+number each, in frontmatter only, not a per-message map. Separately, the
+filename date had a real bug: it used `updatedAt` (last activity), so a
+long-running conversation re-exported today got today's date in the
+filename — reading as "date of export," not "date the conversation
+happened," despite the "date-led" filename scheme's intent (TDL-20260820-010
+Decision 3).
+
+**Decision:** the Agent SDK's public `listSessions()` already returns
+`createdAt` ("extracted from the first entry's timestamp") alongside the
+`lastModified` already used as `updatedAt` — no raw-`.jsonl` read needed,
+unlike the rejected per-message backfill. Threaded `createdAt` through
+`StoredSessionInfo` → `SessionSummary` → `ExportMeta`, the same
+merge-from-store path `title`/`archived` already use for active sessions.
+Frontmatter gains `created` (from `createdAt`) alongside the existing
+`updated`. `exportFilePath`'s date parameter (renamed `dateAt` from
+`updatedAt` — the name was misleading callers into passing the wrong field)
+is now fed `meta.createdAt ?? meta.updatedAt` by `export-writer.ts` and the
+preview script, so the filename reflects when the conversation started, with
+graceful fallback for sessions predating this field.
+
+**Files:** `packages/protocol/src/messages.ts`, `packages/server/src/{ports,sdk-adapter,session-manager}.ts`, `packages/plugin/src/{export-shared,export-markdown,export-writer,chat-view}.ts`, `packages/plugin/scripts/render-export-fixtures.ts`.
+
+---
+
+## TDL-20260821-014: Conversation export — final Markdown-only format, timestamps dropped
+
+**Date:** 2026-08-21
+**Status:** Implemented
+
+**Context:** A fixture-driven style comparison — multiple structural variants
+rendered into the actual vault and reviewed live in Obsidian — surfaced two
+empirical findings that reshaped the export design from TDL-20260820-010's
+plan: (1) Obsidian callouts (`> [!type]`) are parsed as real markdown, so
+fenced code blocks inside them render with syntax highlighting, unlike raw
+`<details>` HTML which Obsidian treats as an opaque block (TDL-20260820-012);
+(2) wrapping a single-item activity run in an outer group callout forced a
+pointless double-expand click, since the outer and inner summaries were
+identical text.
+
+**Decision:** activity items (thinking/tool calls) render as flat, never-
+nested callouts — one per item, no group wrapper — sidestepping finding #1
+via callouts instead of working around it, and avoiding finding #2 entirely.
+A horizontal-rule divider separates every consecutive block. Per-message
+timestamps are dropped entirely (deviates from TDL-20260820-010's Decision
+2 "hybrid backfill" — not worth keeping once seen rendered). HTML export is
+dropped entirely (reverses the original plan's "both formats ship" — callouts
+have no HTML/CSS equivalent, and two structurally-diverging renderers isn't
+worth maintaining).
+
+Full exploration/comparison process recorded in
+`/home/benjamin/.claude/plans/i-want-an-option-linked-cake.md`.
+
+**Files:** `packages/plugin/src/{export-markdown,export-shared}.ts`.
+
+---
+
 ## TDL-20260821-013: Session archive/unarchive reuses the SDK's `tagSession`, not a new store
 
 **Date:** 2026-08-21
@@ -39,6 +205,88 @@ instead of hand-maintaining a parallel list.
 **Files:** `packages/protocol/src/messages.ts`, `packages/server/src/{ports,sdk-adapter,session-manager,connection,ws-transport,index}.ts`, `packages/plugin/src/{bridge-client,chat-view,link-insert}.ts`.
 
 ---
+
+## TDL-20260820-012: Markdown export nests raw `<pre>` HTML, not fenced code, inside `<details>`
+
+**Date:** 2026-08-20
+**Status:** Superseded by TDL-20260821-014
+
+**Context:** TDL-20260820-010's plan flagged this as unconfirmed: "verify
+empirically that fenced code blocks nested inside `<details>` render correctly
+in Obsidian's reading view — expected to work but not yet confirmed." Confirmed,
+and it does **not** work as hoped: Obsidian (like other CommonMark-family
+renderers) treats content between raw HTML tags such as `<details>`/`<summary>`
+as an opaque HTML block, not markdown to re-parse — even with blank lines
+around a ` ``` ` fence, the fence rendered as literal text, not a code block,
+while the `<details>` collapsing itself worked fine (confirmed live in the
+vault by the user).
+
+**Decision:** `export-markdown.ts`'s `toolDetail`/`activityGroupBlock` emit
+escaped `<pre>${escapeHtml(...)}</pre>` for tool input/output and thinking
+text — raw HTML throughout the nested region, matching what `export-html.ts`
+already did — instead of ` ```json `/` ``` ` fences. No functional loss: content
+inside a raw HTML block was never going to get Obsidian's fenced-code syntax
+highlighting anyway, since that pipeline is tied to Obsidian's own fenced-code
+rendering, not to text sitting inside HTML dropped in via a raw block.
+
+**Files:** `packages/plugin/src/export-markdown.ts`.
+
+---
+
+## TDL-20260820-011: Extracted `occ-links.ts` — `link-insert.ts` wasn't actually Obsidian-free
+
+**Date:** 2026-08-20
+**Status:** Implemented
+
+**Context:** TDL-20260820-010's plan had `export-markdown.ts` reuse
+`conversationLinkFromParts` "from `link-insert.ts`, already exported/pure." It
+wasn't: `link-insert.ts` imports real Obsidian runtime classes (`EditorSuggest`,
+`FuzzySuggestModal`, `Notice`) at module scope, so importing anything from it —
+even a pure function — pulls that in too. This broke the fixture preview script
+(`scripts/render-export-fixtures.ts`), which runs under plain Node/`tsx` with no
+Obsidian runtime available (`Cannot find module 'obsidian'`).
+
+**Decision:** extracted `occChatUri`, `sessionLabel`, `conversationLinkFromParts`,
+`conversationLinkMarkdown`, `matchOccTrigger` into a new dependency-free
+`packages/plugin/src/occ-links.ts`. `link-insert.ts` now imports from it and
+re-exports the same names, so `main.ts`/`chat-view.ts`/existing tests are
+unaffected. `export-markdown.ts` imports directly from `occ-links.ts`.
+
+**Side effect:** with its pure logic moved out, `link-insert.ts` is now
+effectively a shell (`SessionCache`, `ConversationSuggest`, `SessionLinkModal`,
+`fetchSessions`'s WebSocket handling) — added to `jest.config.cjs`'s
+`collectCoverageFrom` exclusion alongside `chat-view.ts`/`main.ts`, matching
+AGENTS.md's existing shell-exclusion pattern rather than leaving it as a
+newly-introduced coverage regression.
+
+---
+
+## TDL-20260820-010: Conversation export — full-history round trip + hybrid timestamp backfill
+
+**Date:** 2026-08-20
+**Status:** Implemented
+
+**Context:** Adding "Export to Markdown/HTML" actions that dump a session's
+**complete** transcript. The live view only ever holds a windowed transcript
+(`HISTORY_PAGE = 30`, `session-actor.ts:66`); looping `load_older` client-side
+to reconstruct everything would mean many serial round trips for a long
+session.
+
+**Decision 1 — new stateless round trip:** add `export_history` /
+`export_history_result` messages. Server-side, `SessionManager.loadFullHistory`
+calls the same `loadHistory` port + `mapHistoryMessages` that
+`resumeWithHistory` already uses internally, but with **no actor creation** —
+export is a one-off disk read, not a live session. One round trip instead of N.
+
+**Decision 2 — hybrid timestamp backfill:** Superseded by TDL-20260821-014 —
+dropped entirely after being seen rendered in the actual style comparison.
+
+**Decision 3 — filenames:** `{YYYYMMDD} - {title}.{ext}`, with the session id
+moved into document metadata (YAML frontmatter) rather than the filename.
+Re-export of the same session (matching id) overwrites; a different session
+colliding on date+title gets a numeric suffix.
+
+**Files:** `packages/protocol/src/messages.ts`, `packages/server/src/{session-manager,connection,ws-transport}.ts`, `packages/plugin/src/{export-shared,export-markdown,export-writer,bridge-client,chat-view}.ts`.
 
 ## TDL-20260708-009: Show thinking — request summarized reasoning (Opus redacts raw)
 

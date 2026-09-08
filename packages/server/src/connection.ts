@@ -114,6 +114,9 @@ export class Connection {
 					.then((sessions) => this.deps.send({ type: "sessions_list", sessions }))
 					.catch(() => this.deps.send({ type: "sessions_list", sessions: this.deps.manager.list() }));
 				return {};
+			case "export_history":
+				this.onExportHistory(msg.sessionId);
+				return {};
 			case "ping":
 				this.deps.send({ type: "pong" });
 				return {};
@@ -234,6 +237,19 @@ export class Connection {
 			.catch((err: unknown) => {
 				const message = err instanceof Error ? err.message : String(err);
 				this.deps.send({ type: "error", sessionId, message: `Delete failed: ${message}` });
+			});
+	}
+
+	private onExportHistory(sessionId: string): void {
+		// Bundle the session's current summary into the same round trip — the client
+		// must NOT be trusted to already have an up-to-date entry for this session in
+		// its own list (it may never have fetched one, or fetched it before this
+		// session's last update).
+		Promise.all([this.deps.manager.loadFullHistory(sessionId), this.deps.manager.getSessionSummary(sessionId)])
+			.then(([events, summary]) => this.deps.send({ type: "export_history_result", sessionId, events, summary }))
+			.catch((err: unknown) => {
+				const message = err instanceof Error ? err.message : String(err);
+				this.deps.send({ type: "error", sessionId, message: `Export failed: ${message}` });
 			});
 	}
 
