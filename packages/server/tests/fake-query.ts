@@ -4,7 +4,7 @@
  * actor's consume loop, and observe interrupts — with no real SDK.
  */
 import { AsyncInputQueue } from "../src/async-queue";
-import type { QueryHandle, QueryOptions, RunQuery, UserInputMessage } from "../src/ports";
+import type { ContextUsage, QueryHandle, QueryOptions, RunQuery, UserInputMessage } from "../src/ports";
 import type { PermissionMode, SdkMessage } from "@occ/protocol";
 
 export interface FakeQuery {
@@ -16,6 +16,8 @@ export interface FakeQuery {
 	interrupted(): boolean;
 	disposed(): boolean;
 	modeSet(): PermissionMode | undefined;
+	/** Set what `handle.getContextUsage()` resolves to (or rejects, for error-path tests). */
+	setContextUsage(result: ContextUsage | null | (() => Promise<ContextUsage | null>)): void;
 }
 
 export function makeFakeQuery(): FakeQuery {
@@ -25,6 +27,7 @@ export function makeFakeQuery(): FakeQuery {
 	let didInterrupt = false;
 	let didDispose = false;
 	let lastMode: PermissionMode | undefined;
+	let contextUsage: ContextUsage | null | (() => Promise<ContextUsage | null>) = null;
 
 	const runQuery: RunQuery = (prompt, options) => {
 		captured = options;
@@ -37,6 +40,7 @@ export function makeFakeQuery(): FakeQuery {
 			setPermissionMode: async (mode) => {
 				lastMode = mode;
 			},
+			getContextUsage: () => (typeof contextUsage === "function" ? contextUsage() : Promise.resolve(contextUsage)),
 			dispose: async () => {
 				// Real dispose closes the generator → the consume loop ends. Model that by
 				// closing the output stream so `for await (…of handle)` completes.
@@ -56,6 +60,9 @@ export function makeFakeQuery(): FakeQuery {
 		interrupted: () => didInterrupt,
 		disposed: () => didDispose,
 		modeSet: () => lastMode,
+		setContextUsage: (result) => {
+			contextUsage = result;
+		},
 	};
 }
 

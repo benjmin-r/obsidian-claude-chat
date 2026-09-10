@@ -153,6 +153,25 @@ describe("SessionManager", () => {
 		expect(actor.externalActivity.severity).toBe("busy"); // set before any poll
 	});
 
+	it("resumeWithHistory seeds an estimated context-window usage from stored history (no live turn needed)", async () => {
+		const { manager } = makeManager({
+			loadHistory: async () => [
+				{
+					type: "assistant",
+					message: { usage: { input_tokens: 20000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } },
+				},
+			],
+		});
+		const actor = await manager.resumeWithHistory("sess-1");
+		expect(actor.statusEvent().contextUsedPercent).toBeCloseTo(10); // 20000 / 200000 default window
+	});
+
+	it("resumeWithHistory leaves context usage unset when history has no usable usage data", async () => {
+		const { manager } = makeManager({ loadHistory: async () => [] });
+		const actor = await manager.resumeWithHistory("sess-1");
+		expect(actor.statusEvent().contextUsedPercent).toBeUndefined();
+	});
+
 	it("sendGate blocks when a CLI holds the session, allows otherwise", async () => {
 		let severity: "none" | "busy" | "idle" = "busy";
 		const { manager } = makeManager({ detectExternalActivity: () => ({ severity }) });

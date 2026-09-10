@@ -244,6 +244,40 @@ describe("view-model", () => {
 		expect(s.costUsd).toBe(0.05);
 	});
 
+	it("session_status carries context window usage on attach (before any turn runs)", () => {
+		const s = applyEvent(initialState("m"), {
+			type: "session_status",
+			sessionId: SID,
+			status: "idle",
+			model: "m",
+			cwd: "/v",
+			isWriter: true,
+			contextUsedPercent: 12,
+		});
+		expect(s.contextUsedPercent).toBe(12);
+	});
+
+	it("done records context window usage and keeps it across turns that omit it", () => {
+		const s1 = applyEvent(initialState("m"), {
+			type: "done",
+			sessionId: SID,
+			subtype: "success",
+			isError: false,
+			contextUsedPercent: 37,
+		});
+		expect(s1.contextUsedPercent).toBe(37);
+		const s2 = applyEvent(s1, { type: "done", sessionId: SID, subtype: "success", isError: false });
+		expect(s2.contextUsedPercent).toBe(37);
+	});
+
+	it("attach_reset clears context window usage", () => {
+		const s = applyEvent(
+			{ ...initialState("m"), contextUsedPercent: 80 },
+			{ type: "attach_reset", sessionId: SID }
+		);
+		expect(s.contextUsedPercent).toBeUndefined();
+	});
+
 	it("sessions_list and setConnection / appendUserMessage helpers", () => {
 		const s = applyEvent(initialState("m"), {
 			type: "sessions_list",

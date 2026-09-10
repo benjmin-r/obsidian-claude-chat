@@ -83,6 +83,7 @@ export class ChatView extends ItemView {
 	private connIconEl!: HTMLElement;
 	private activityIconEl!: HTMLElement;
 	private costEl!: HTMLElement;
+	private contextEl!: HTMLElement;
 	private modelLabelEl!: HTMLElement;
 	private modeBtn!: HTMLButtonElement;
 	private reloadBtn!: HTMLButtonElement;
@@ -338,6 +339,7 @@ export class ChatView extends ItemView {
 		// Right-aligned status group: cost, connection, activity.
 		const status = toolbar.createDiv({ cls: "occ-status" });
 		this.costEl = status.createSpan({ cls: "occ-cost" });
+		this.contextEl = status.createSpan({ cls: "occ-cost" });
 		this.connIconEl = status.createSpan({ cls: "occ-status-icon" });
 		this.connIconEl.addEventListener("click", () => this.openStatusLegend());
 		this.activityIconEl = status.createSpan({ cls: "occ-status-icon" });
@@ -1269,6 +1271,7 @@ export class ChatView extends ItemView {
 		this.inputEl.placeholder = readOnly ? "Read-only — open in a terminal" : "Message Claude…";
 
 		this.costEl.setText(typeof this.state.costUsd === "number" ? `$${this.state.costUsd.toFixed(2)}` : "");
+		this.renderContextUsage();
 
 		this.modelLabelEl.setText(MODEL_OPTIONS[this.selectedModel] ?? this.selectedModel);
 
@@ -1276,6 +1279,21 @@ export class ChatView extends ItemView {
 		const modeMeta = PERMISSION_MODES.find((m) => m.mode === mode) ?? PERMISSION_MODES[0]!;
 		setIcon(this.modeBtn, modeMeta.icon);
 		this.modeBtn.setAttr("aria-label", `Permission: ${modeMeta.label}`);
+	}
+
+	/** Context window remaining, colored like the terminal statusline (green/yellow/red). */
+	private renderContextUsage(): void {
+		const used = this.state.contextUsedPercent;
+		if (typeof used !== "number") {
+			this.contextEl.setText("");
+			this.contextEl.removeAttribute("aria-label");
+			return;
+		}
+		const remaining = Math.max(0, Math.round(100 - used));
+		const cls = remaining > 50 ? "occ-ctx-ok" : remaining > 20 ? "occ-ctx-warn" : "occ-ctx-danger";
+		this.contextEl.className = `occ-cost ${cls}`;
+		this.contextEl.setText(`ctx:${remaining}%`);
+		this.contextEl.setAttr("aria-label", `Context window: ${remaining}% remaining`);
 	}
 
 	private openModelMenu(evt: MouseEvent): void {

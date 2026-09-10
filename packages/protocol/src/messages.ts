@@ -153,6 +153,8 @@ export interface DoneEvent {
 	isError: boolean;
 	/** cumulative session cost in USD, if the SDK reported it. */
 	costUsd?: number;
+	/** context window usage after this turn, 0-100 (share of the window used), if known. */
+	contextUsedPercent?: number;
 }
 
 /** An error surfaced to the client. */
@@ -181,6 +183,12 @@ export interface SessionStatusEvent {
 	hasOlderHistory?: boolean;
 	/** the session's current agent permission mode. */
 	permissionMode?: PermissionMode;
+	/**
+	 * Context window usage, 0-100 (share of the window used). An estimate derived
+	 * from the stored transcript until the session's first live turn in this
+	 * process, after which it's the SDK's own (exact) number.
+	 */
+	contextUsedPercent?: number;
 }
 
 /** Sent FIRST on every (re)attach so the client clears its transcript before the replay. */

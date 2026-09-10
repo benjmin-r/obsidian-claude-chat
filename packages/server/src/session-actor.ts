@@ -83,6 +83,8 @@ export class SessionActor {
 	private _sdkSessionId: string | undefined;
 	private _updatedAt: number;
 	private _messageCount = 0;
+	/** 0-100; estimated from stored history until a live turn reports the exact figure. */
+	private _contextUsedPercent: number | undefined;
 	private pendingRequest: PermissionRequestEvent | undefined;
 	private permissionCounter = 0;
 	/** older history events not yet sent to clients (oldest-first), for paging. */
@@ -357,6 +359,15 @@ export class SessionActor {
 		}
 	}
 
+	/**
+	 * Seed an initial (estimated) context-window usage figure from stored history,
+	 * so `statusEvent()` reports something on the very first attach — before any
+	 * live turn has run in this process to ask the SDK for the exact number.
+	 */
+	seedContextUsage(percent: number | undefined): void {
+		if (percent !== undefined) this._contextUsedPercent = percent;
+	}
+
 	/** Pop the next older page of history (most-recent older events first to prepend). */
 	loadOlderPage(): { events: RenderEvent[]; hasMore: boolean } {
 		const start = Math.max(0, this.olderHistory.length - HISTORY_PAGE);
@@ -375,6 +386,7 @@ export class SessionActor {
 			isWriter: false, // the transport rewrites this per-connection.
 			hasOlderHistory: this.olderHistory.length > 0,
 			permissionMode: this._permissionMode,
+			...(this._contextUsedPercent !== undefined ? { contextUsedPercent: this._contextUsedPercent } : {}),
 		};
 	}
 
@@ -450,11 +462,24 @@ export class SessionActor {
 					this._sdkSessionId = carried;
 					this.broadcast(this.statusEvent()); // tell clients the canonical id
 				}
-				for (const event of mapSdkEvent(msg, this.id)) {
-					this.record(event);
-				}
 				if (msg.type === "result") {
+					// Best-effort: attach the post-turn context-window usage to the "done"
+					// event so the client can show it alongside cost. Never let a rejection
+					// (experimental SDK surface) stall turn completion.
+					const ctx = await handle.getContextUsage?.().catch(() => null);
+					// Exact, live number now supersedes any estimate seeded from stored
+					// history — a later reattach's statusEvent() should reflect it too.
+					if (ctx) this._contextUsedPercent = ctx.percentage;
+					for (const event of mapSdkEvent(msg, this.id)) {
+						this.record(
+							event.type === "done" && ctx ? { ...event, contextUsedPercent: ctx.percentage } : event
+						);
+					}
 					this.setStatus("idle");
+				} else {
+					for (const event of mapSdkEvent(msg, this.id)) {
+						this.record(event);
+					}
 				}
 			}
 			this.setStatus("idle");

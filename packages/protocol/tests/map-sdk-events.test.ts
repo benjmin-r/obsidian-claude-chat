@@ -1,4 +1,12 @@
-import { extractTodos, mapHistoryMessages, mapSdkEvent, stringifyToolResult, type HistoryMessage } from "../src/map-sdk-events";
+import {
+	DEFAULT_CONTEXT_WINDOW_TOKENS,
+	estimateContextUsedPercent,
+	extractTodos,
+	mapHistoryMessages,
+	mapSdkEvent,
+	stringifyToolResult,
+	type HistoryMessage,
+} from "../src/map-sdk-events";
 import type { SdkMessage } from "../src/sdk-types";
 
 const SID = "sess-1";
@@ -184,6 +192,34 @@ describe("mapHistoryMessages", () => {
 			{ type: "user_echo", sessionId: "s", text: "hello", messageId: "u-1" },
 			{ type: "assistant_text_delta", sessionId: "s", text: "hi!", messageId: "a-1" },
 		]);
+	});
+});
+
+describe("estimateContextUsedPercent", () => {
+	it("sizes the last stored assistant usage block against the default window", () => {
+		const half = DEFAULT_CONTEXT_WINDOW_TOKENS / 2;
+		const msgs: HistoryMessage[] = [
+			{ type: "assistant", message: { usage: { input_tokens: 100, cache_read_input_tokens: half - 100, cache_creation_input_tokens: 0 } } },
+		];
+		expect(estimateContextUsedPercent(msgs)).toBeCloseTo(50);
+	});
+
+	it("uses the LAST assistant usage block, skipping trailing tool_result/user turns", () => {
+		const msgs: HistoryMessage[] = [
+			{ type: "assistant", message: { usage: { input_tokens: 1000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } },
+			{ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }] } },
+			{ type: "assistant", message: { usage: { input_tokens: 2000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } },
+		];
+		expect(estimateContextUsedPercent(msgs)).toBeCloseTo((2000 / DEFAULT_CONTEXT_WINDOW_TOKENS) * 100);
+	});
+
+	it("clamps to 100 and returns undefined when no assistant usage is found", () => {
+		const over: HistoryMessage[] = [
+			{ type: "assistant", message: { usage: { input_tokens: DEFAULT_CONTEXT_WINDOW_TOKENS * 2, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } },
+		];
+		expect(estimateContextUsedPercent(over)).toBe(100);
+		expect(estimateContextUsedPercent([])).toBeUndefined();
+		expect(estimateContextUsedPercent([{ type: "assistant", message: { content: [] } }])).toBeUndefined();
 	});
 });
 

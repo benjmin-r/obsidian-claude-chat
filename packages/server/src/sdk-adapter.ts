@@ -33,6 +33,8 @@ interface SdkQuery extends AsyncGenerator<unknown, void> {
 	setMaxThinkingTokens(max: number | null, display?: "summarized" | "omitted" | null): Promise<void>;
 	/** Forcefully ends the query and terminates the CLI subprocess (per SDK docs). */
 	close(): void;
+	/** Breakdown of current context window usage by category (same data behind `/context`). */
+	getContextUsage(): Promise<{ percentage: number; totalTokens: number; maxTokens: number }>;
 }
 
 export const runQuery: RunQuery = (prompt, options) => {
@@ -61,6 +63,15 @@ export const runQuery: RunQuery = (prompt, options) => {
 		[Symbol.asyncIterator]: () => q[Symbol.asyncIterator]() as AsyncIterator<SdkMessage>,
 		interrupt: () => q.interrupt(),
 		setPermissionMode: (mode) => q.setPermissionMode(mode),
+		getContextUsage: async () => {
+			try {
+				const { percentage, totalTokens, maxTokens } = await q.getContextUsage();
+				return { percentage, totalTokens, maxTokens };
+			} catch {
+				// experimental SDK surface; a rejection just means "unknown" to callers.
+				return null;
+			}
+		},
 		dispose: async () => {
 			try {
 				// close() (NOT return()) is what actually terminates the CLI subprocess —

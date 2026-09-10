@@ -548,6 +548,19 @@
 	color: var(--text-muted);
 	white-space: nowrap;
 }
+.occ-cost + .occ-cost {
+	margin-left: 6px;
+}
+
+.occ-ctx-ok {
+	color: var(--text-success);
+}
+.occ-ctx-warn {
+	color: var(--text-warning, var(--text-error));
+}
+.occ-ctx-danger {
+	color: var(--text-error);
+}
 
 .occ-empty {
 	margin: auto;

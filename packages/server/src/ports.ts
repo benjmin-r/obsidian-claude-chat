@@ -43,6 +43,14 @@ export interface UserInputMessage {
 	session_id?: string;
 }
 
+/** Context window usage as of the last completed turn (from the SDK's `getContextUsage`). */
+export interface ContextUsage {
+	/** share of the context window used, 0-100. */
+	percentage: number;
+	totalTokens: number;
+	maxTokens: number;
+}
+
 /** The object returned by `query()`: an async iterable of SDK messages + controls. */
 export interface QueryHandle extends AsyncIterable<SdkMessage> {
 	/** Cancel the in-flight TURN only; the session (and its subprocess) stays alive. */
@@ -54,6 +62,12 @@ export interface QueryHandle extends AsyncIterable<SdkMessage> {
 	 * without it, dropped/reaped sessions orphan a resident subprocess.
 	 */
 	dispose(): Promise<void>;
+	/**
+	 * Best-effort breakdown of current context window usage (mirrors the CLI's
+	 * `/context`). Optional so test fakes needn't implement it; real callers should
+	 * treat a thrown/rejected call as "unknown" rather than fatal.
+	 */
+	getContextUsage?(): Promise<ContextUsage | null>;
 }
 
 /** Injected SDK entrypoint. Real = `sdk-adapter.runQuery`; test = a scripted generator. */

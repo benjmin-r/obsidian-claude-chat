@@ -6,7 +6,13 @@
  * still hold the provisional id keep resolving to the same actor.
  */
 
-import { mapHistoryMessages, type PermissionMode, type RenderEvent, type SessionSummary } from "@occ/protocol";
+import {
+	estimateContextUsedPercent,
+	mapHistoryMessages,
+	type PermissionMode,
+	type RenderEvent,
+	type SessionSummary,
+} from "@occ/protocol";
 import { SessionActor, type SessionActorDeps } from "./session-actor";
 import type { ArchiveStored, DeleteStored, DetectExternalActivity, ListStored, LoadHistory, RenameStored } from "./ports";
 
@@ -237,6 +243,7 @@ export class SessionManager {
 		try {
 			const messages = await this.deps.loadHistory(this.config.cwd, sessionId);
 			actor.seedHistory(mapHistoryMessages(messages, sessionId));
+			actor.seedContextUsage(estimateContextUsedPercent(messages));
 		} catch {
 			// history is best-effort; resume still works for the next turn.
 		}

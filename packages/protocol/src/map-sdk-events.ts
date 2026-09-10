@@ -191,6 +191,42 @@ export function stringifyToolResult(content: unknown): string {
 	return JSON.stringify(content);
 }
 
+/**
+ * Approximate context window for models run through this server (none opt into the
+ * 1M-context beta), used only to estimate usage before a session's first live turn —
+ * see {@link estimateContextUsedPercent}. A live turn's `getContextUsage()` (exact,
+ * per-model) supersedes it.
+ */
+export const DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000;
+
+/**
+ * Best-effort context-window usage estimate from a resumed session's stored
+ * transcript, so the client can show `ctx:NN%` immediately on load — before any
+ * live turn has run in this process and the SDK's own `getContextUsage()`
+ * becomes available (see session-actor.ts). Reads the last stored assistant
+ * message's `usage` block (present on every persisted transcript entry) and
+ * sizes it against {@link DEFAULT_CONTEXT_WINDOW_TOKENS}.
+ */
+export function estimateContextUsedPercent(messages: HistoryMessage[]): number | undefined {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m = messages[i];
+		if (!m || m.type !== "assistant") continue;
+		const usage = (m.message as { usage?: Record<string, unknown> } | undefined)?.usage;
+		if (!usage) continue;
+		const input = numberField(usage.input_tokens);
+		const cacheRead = numberField(usage.cache_read_input_tokens);
+		const cacheCreate = numberField(usage.cache_creation_input_tokens);
+		if (input === undefined && cacheRead === undefined && cacheCreate === undefined) continue;
+		const used = (input ?? 0) + (cacheRead ?? 0) + (cacheCreate ?? 0);
+		return Math.min(100, (used / DEFAULT_CONTEXT_WINDOW_TOKENS) * 100);
+	}
+	return undefined;
+}
+
+function numberField(v: unknown): number | undefined {
+	return typeof v === "number" ? v : undefined;
+}
+
 /** Coerce a TodoWrite tool input into a clean TodoItem[]. */
 export function extractTodos(input: unknown): TodoItem[] {
 	const raw = (input as { todos?: unknown })?.todos;

@@ -90,6 +90,30 @@ describe("SessionActor", () => {
 		expect(actor.status).toBe("idle");
 	});
 
+	it("attaches context window usage to the done event when the SDK reports it", async () => {
+		const { fake, actor } = makeActor();
+		const events = collect(actor);
+		fake.setContextUsage({ percentage: 42, totalTokens: 42000, maxTokens: 100000 });
+		actor.enqueue("hi");
+		fake.emit({ type: "result", subtype: "success", is_error: false, total_cost_usd: 0.5 });
+		await flush();
+		const done = events.find((e) => e.type === "done");
+		expect(done).toMatchObject({ type: "done", costUsd: 0.5, contextUsedPercent: 42 });
+	});
+
+	it("still emits done with no contextUsedPercent when getContextUsage rejects", async () => {
+		const { fake, actor } = makeActor();
+		const events = collect(actor);
+		fake.setContextUsage(() => Promise.reject(new Error("experimental API unavailable")));
+		actor.enqueue("hi");
+		fake.emit({ type: "result", subtype: "success", is_error: false });
+		await flush();
+		expect(actor.status).toBe("idle");
+		const done = events.find((e) => e.type === "done");
+		expect(done).toMatchObject({ type: "done" });
+		expect((done as { contextUsedPercent?: number }).contextUsedPercent).toBeUndefined();
+	});
+
 	it("auto-allows non-destructive tools", async () => {
 		const { fake, actor } = makeActor();
 		actor.enqueue("hi");

@@ -101,6 +101,8 @@ export interface ChatState {
 	hasOlderHistory: boolean;
 	/** cumulative session cost in USD, if known. */
 	costUsd?: number;
+	/** context window usage after the last turn, 0-100 (share of the window used), if known. */
+	contextUsedPercent?: number;
 	/** the session's agent permission mode. */
 	permissionMode: PermissionMode;
 	/** a live external (CLI) process holds the session → the plugin is read-only. */
@@ -188,7 +190,12 @@ export function applyEvent(state: ChatState, event: BridgeEvent): ChatState {
 		case "permission_request":
 			return { ...state, pendingPermission: event };
 		case "done":
-			return { ...state, openKind: null, costUsd: event.costUsd ?? state.costUsd };
+			return {
+				...state,
+				openKind: null,
+				costUsd: event.costUsd ?? state.costUsd,
+				contextUsedPercent: event.contextUsedPercent ?? state.contextUsedPercent,
+			};
 		case "error":
 			// A transient toast alone (chat-view.ts) isn't enough: it fires once, live, and
 			// is gone in 5s, so a client reattaching later (e.g. after a stalled-turn
@@ -204,6 +211,7 @@ export function applyEvent(state: ChatState, event: BridgeEvent): ChatState {
 				isWriter: event.isWriter,
 				hasOlderHistory: event.hasOlderHistory ?? state.hasOlderHistory,
 				permissionMode: event.permissionMode ?? state.permissionMode,
+				contextUsedPercent: event.contextUsedPercent ?? state.contextUsedPercent,
 				// a resolved/expired request is implied once we're no longer awaiting.
 				pendingPermission: event.status === "awaiting_permission" ? state.pendingPermission : undefined,
 			};
@@ -217,6 +225,7 @@ export function applyEvent(state: ChatState, event: BridgeEvent): ChatState {
 				pendingPermission: undefined,
 				hasOlderHistory: false,
 				costUsd: undefined,
+				contextUsedPercent: undefined,
 				externalActivity: "none",
 				externalEntrypoint: undefined,
 			};
