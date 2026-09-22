@@ -1068,6 +1068,12 @@ export class ChatView extends ItemView {
 		);
 		menu.addItem((i) =>
 			i
+				.setTitle(`Copy session ID: ${sessionId}`)
+				.setIcon("hash")
+				.onClick(() => this.copyToClipboard(sessionId, "Session ID copied"))
+		);
+		menu.addItem((i) =>
+			i
 				.setTitle("Export to Markdown")
 				.setIcon("file-text")
 				.onClick(() => void this.exportSession(sessionId, currentTitle))
