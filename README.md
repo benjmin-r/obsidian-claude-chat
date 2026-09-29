@@ -119,7 +119,7 @@ Enable **Claude Chat** in *Settings → Community plugins*, then open
 *Settings → Claude Chat* and set:
 - **Server URL** — `ws://<host>.<tailnet>.ts.net:8765` (or the Tailscale IP)
 - **Bearer token** — the same `OCC_TOKEN` as the server
-- **Default model** — defaults to Opus 4.8
+- **Default model** — defaults to Sonnet 5.5
 
 These fields are shown on **all platforms** (including mobile). Open the chat
 from the ribbon (message icon) or the *Open Claude chat* command.

@@ -23,7 +23,7 @@ Environment=PATH=/home/USER/.local/bin:/home/USER/bin:/home/USER/.local/share/np
 #   OCC_HOST=100.64.0.1
 #   OCC_PORT=8765
 #   OCC_VAULT_CWD=/home/USER/vaults/VAULT
-#   OCC_MODEL=claude-opus-4-8
+#   OCC_MODEL=claude-sonnet-5-5
 EnvironmentFile=/home/USER/.config/occ-server.env
 
 # SECURITY: ANTHROPIC_API_KEY is intentionally NOT set. If it were set the SDK

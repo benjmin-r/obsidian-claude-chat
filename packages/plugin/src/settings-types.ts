@@ -42,7 +42,7 @@ export interface ClaudeChatSettings {
 export const DEFAULT_SETTINGS: ClaudeChatSettings = {
 	serverUrl: "ws://your-host.your-tailnet.ts.net:8765",
 	token: "",
-	defaultModel: "claude-sonnet-5",
+	defaultModel: "claude-sonnet-5-5",
 	defaultPermissionMode: "default",
 	autoReconnect: true,
 	reconnectDelayMs: 1500,
@@ -54,10 +54,10 @@ export const DEFAULT_SETTINGS: ClaudeChatSettings = {
 
 /** Models offered in the new-session dropdown. */
 export const MODEL_OPTIONS: Record<string, string> = {
+	"claude-opus-5-5": "Opus 5.5",
+	"claude-sonnet-5-5": "Sonnet 5.5",
 	"claude-opus-5": "Opus 5",
 	"claude-sonnet-5": "Sonnet 5",
-	"claude-opus-4-8": "Opus 4.8",
-	"claude-sonnet-4-6": "Sonnet 4.6",
 	"claude-haiku-4-5-20251001": "Haiku 4.5",
 };
 

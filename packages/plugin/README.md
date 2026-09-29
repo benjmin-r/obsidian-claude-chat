@@ -26,7 +26,7 @@ Enable **Claude Chat** under *Settings → Community plugins*.
 | ---------------- | -------------------------------------------------------------- |
 | Server URL       | `ws://<host>.<tailnet>.ts.net:8765` of the SDK server          |
 | Bearer token     | Must match `OCC_TOKEN` on the server (stored masked)           |
-| Default model    | Model used for new sessions (default Opus 4.8)                 |
+| Default model    | Model used for new sessions (default Sonnet 5.5)               |
 | Auto-reconnect   | Reconnect with backoff when the connection drops               |
 | Reconnect delay  | Base backoff in ms                                             |
 

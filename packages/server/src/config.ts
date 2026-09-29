@@ -21,7 +21,7 @@ export interface ServerConfig {
 }
 
 export const DEFAULT_PORT = 8765;
-export const DEFAULT_MODEL = "claude-opus-4-8";
+export const DEFAULT_MODEL = "claude-sonnet-5-5";
 export const DEFAULT_VAULT_CWD = "/home/USER/vaults/VAULT";
 export const DEFAULT_BUFFER_LIMIT = 2000;
 

@@ -9,7 +9,7 @@ describe("ClaudeChatPlugin", () => {
 		expect(plugin.addCommand).toHaveBeenCalled();
 		expect(plugin.addRibbonIcon).toHaveBeenCalled();
 		expect(plugin.addSettingTab).toHaveBeenCalled();
-		expect(plugin.settings.defaultModel).toBe("claude-sonnet-5");
+		expect(plugin.settings.defaultModel).toBe("claude-sonnet-5-5");
 	});
 
 	it("opens a new right-sidebar leaf when none exists", async () => {
